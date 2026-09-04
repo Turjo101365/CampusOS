@@ -2,6 +2,29 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { DatabaseSync } from 'node:sqlite';
 import { runMigration } from './migrate.js';
+import {
+  syncCreateSchedule,
+  syncUpdateSchedule,
+  syncDeleteSchedule,
+  syncCreateRoom,
+  syncUpdateRoom,
+  syncDeleteRoom,
+  syncBookRoom,
+  syncCancelBooking,
+  syncCreateEvent,
+  syncUpdateEvent,
+  syncDeleteEvent,
+  syncRegisterEvent,
+  syncCancelRegistration,
+  syncCreateAnnouncement,
+  syncUpdateAnnouncement,
+  syncDeleteAnnouncement,
+  syncCreateAssignment,
+  syncUpdateAssignment,
+  syncDeleteAssignment,
+  syncResetToSeed
+} from './mysqlSync.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -25,6 +48,7 @@ export function initStorage(forceReset = false) {
 
 export function resetToSeed() {
   const summary = runMigration(true);
+  syncResetToSeed();
   return { success: true, message: 'Database reset to original seed data.', summary };
 }
 
@@ -89,6 +113,8 @@ export function createSchedule(data) {
     record.instructor,
     record.section
   );
+
+  syncCreateSchedule(record);
   return record;
 }
 
@@ -113,12 +139,17 @@ export function updateSchedule(id, updates) {
     merged.section,
     id
   );
+
+  syncUpdateSchedule(merged);
   return merged;
 }
 
 export function deleteSchedule(id) {
   const d = getDb();
   const res = d.prepare('DELETE FROM schedules WHERE id = ?').run(id);
+  if (res.changes > 0) {
+    syncDeleteSchedule(id);
+  }
   return res.changes > 0;
 }
 
@@ -214,7 +245,11 @@ export function createRoom(data) {
     JSON.stringify(eq),
     Number(data.floor) || 7,
     data.status || 'available'
-  );  return getRoomById(id);
+  );
+
+  const created = getRoomById(id);
+  syncCreateRoom(created);
+  return created;
 }
 
 export function updateRoom(id, updates) {
@@ -240,7 +275,11 @@ export function updateRoom(id, updates) {
     Number(merged.floor),
     merged.status,
     id
-  );  return getRoomById(id);
+  );
+
+  const updated = getRoomById(id);
+  syncUpdateRoom(updated);
+  return updated;
 }
 
 export function deleteRoom(id) {
@@ -249,6 +288,9 @@ export function deleteRoom(id) {
   if (!room) return false;
   d.prepare('DELETE FROM bookings WHERE room_number = ?').run(room.room_number);
   const res = d.prepare('DELETE FROM rooms WHERE id = ?').run(id);
+  if (res.changes > 0) {
+    syncDeleteRoom(id);
+  }
   return res.changes > 0;
 }
 
@@ -357,6 +399,8 @@ export function bookRoom(roomNumber, bookingData) {
     newBooking.end_time,
     newBooking.purpose
   );
+
+  syncBookRoom(newBooking);
   return { room: getRoomByNumber(roomNumber), booking: newBooking };
 }
 
@@ -373,6 +417,7 @@ export function cancelRoomBooking(roomNumberOrId, bookingId) {
   }
 
   d.prepare('DELETE FROM bookings WHERE booking_id = ?').run(bookingId);
+  syncCancelBooking(bookingId);
   return { room: getRoomByNumber(room.room_number), cancelledBooking: existing };
 }
 
@@ -451,7 +496,11 @@ export function createEvent(data) {
     Number(data.capacity) || 50,
     Number(data.registered) || 0,
     data.status || 'upcoming'
-  );  return getEventById(id);
+  );
+
+  const created = getEventById(id);
+  syncCreateEvent(created);
+  return created;
 }
 
 export function updateEvent(id, updates) {
@@ -477,13 +526,20 @@ export function updateEvent(id, updates) {
     Number(merged.registered),
     merged.status,
     id
-  );  return getEventById(id);
+  );
+
+  const updated = getEventById(id);
+  syncUpdateEvent(updated);
+  return updated;
 }
 
 export function deleteEvent(id) {
   const d = getDb();
   d.prepare('DELETE FROM registrations WHERE event_id = ?').run(id);
   const res = d.prepare('DELETE FROM events WHERE id = ?').run(id);
+  if (res.changes > 0) {
+    syncDeleteEvent(id);
+  }
   return res.changes > 0;
 }
 
@@ -519,6 +575,8 @@ export function registerForEvent(eventIdOrName, studentInfo) {
   const newRegistered = event.registered + 1;
   const newStatus = newRegistered >= event.capacity ? 'full' : event.status;
   d.prepare('UPDATE events SET registered = ?, status = ? WHERE id = ?').run(newRegistered, newStatus, event.id);
+
+  syncRegisterEvent(event.id, student_id, name);
   return { event: getEventById(event.id), registration: { student_id, name } };
 }
 
@@ -539,6 +597,8 @@ export function cancelEventRegistration(eventIdOrName, studentId) {
   const newRegistered = Math.max(0, event.registered - 1);
   const newStatus = event.status === 'full' && newRegistered < event.capacity ? 'upcoming' : event.status;
   d.prepare('UPDATE events SET registered = ?, status = ? WHERE id = ?').run(newRegistered, newStatus, event.id);
+
+  syncCancelRegistration(event.id, studentId);
   return { event: getEventById(event.id), cancelled: existing };
 }
 
@@ -581,7 +641,11 @@ export function createAnnouncement(data) {
     data.priority || 'medium',
     data.posted_by?.trim() || 'Department Office',
     data.expires || '2026-09-30'
-  );  return getAnnouncementById(id);
+  );
+
+  const created = getAnnouncementById(id);
+  syncCreateAnnouncement(created);
+  return created;
 }
 
 export function updateAnnouncement(id, updates) {
@@ -602,12 +666,19 @@ export function updateAnnouncement(id, updates) {
     merged.posted_by,
     merged.expires,
     id
-  );  return getAnnouncementById(id);
+  );
+
+  const updated = getAnnouncementById(id);
+  syncUpdateAnnouncement(updated);
+  return updated;
 }
 
 export function deleteAnnouncement(id) {
   const d = getDb();
   const res = d.prepare('DELETE FROM announcements WHERE id = ?').run(id);
+  if (res.changes > 0) {
+    syncDeleteAnnouncement(id);
+  }
   return res.changes > 0;
 }
 
@@ -653,7 +724,11 @@ export function createAssignment(data) {
     data.submission_platform || 'Google Classroom',
     data.status || 'pending',
     Number(data.marks) || 10
-  );  return getAssignmentById(id);
+  );
+
+  const created = getAssignmentById(id);
+  syncCreateAssignment(created);
+  return created;
 }
 
 export function updateAssignment(id, updates) {
@@ -677,12 +752,19 @@ export function updateAssignment(id, updates) {
     merged.status,
     Number(merged.marks),
     id
-  );  return getAssignmentById(id);
+  );
+
+  const updated = getAssignmentById(id);
+  syncUpdateAssignment(updated);
+  return updated;
 }
 
 export function deleteAssignment(id) {
   const d = getDb();
   const res = d.prepare('DELETE FROM assignments WHERE id = ?').run(id);
+  if (res.changes > 0) {
+    syncDeleteAssignment(id);
+  }
   return res.changes > 0;
 }
 

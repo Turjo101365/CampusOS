@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { initStorage } from './db/storage.js';
+import { initMysqlSync } from './db/mysqlSync.js';
 
 import schedulesRouter from './routes/schedules.js';
 import roomsRouter from './routes/rooms.js';
@@ -20,6 +21,7 @@ const __dirname = path.dirname(__filename);
 
 // Initialize persistent storage (loads seeds on first run)
 initStorage();
+initMysqlSync();
 
 const app = express();
 const PORT = process.env.PORT || 3000;

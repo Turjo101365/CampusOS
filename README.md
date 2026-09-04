@@ -81,8 +81,15 @@ cp .env.example .env
 | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | Google Gemini API key for LLM tool calling | Optional (Native Engine used if omitted) |
 | `OPENAI_API_KEY` | OpenAI API key for GPT-4o-mini tool calling | Optional |
 | `GROQ_API_KEY` | Groq API key for LLaMA-3.3 tool calling | Optional |
+| `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE` | Optional MySQL connection for phpMyAdmin live sync | Optional |
 
 > **Note**: An LLM API key is **optional**. If no key is set, CampusOS automatically utilizes its **Native Engine** which executes the exact same tool calling schemas and live database queries, ensuring judges can test every feature immediately with zero setup!
+
+### Database & phpMyAdmin Integration
+CampusOS supports **zero-dependency SQLite out-of-the-box** (so judges can run it without any installed DB), while simultaneously providing **automatic real-time synchronization to MySQL & phpMyAdmin**:
+- **Automatic Sync**: When MySQL is running (e.g. via Docker or XAMPP on port 3306), CampusOS automatically seeds and syncs all CRUD operations to `appdb` and `campusos`.
+- **phpMyAdmin**: Open `http://localhost:8081` (or `http://localhost/phpmyadmin`) to view all 7 tables and live data.
+- **Manual Import**: A standalone SQL dump is also provided at [`schema/campusos_mysql.sql`](./schema/campusos_mysql.sql). You can also run `npm run db:mysql` to re-seed MySQL at any time.
 
 ---
 
