@@ -12,6 +12,9 @@ flowchart LR
   API --> Modules[Domain services]
   Agent[OpenAI Responses agent] --> Tools[Allowlisted functions]
   Tools --> Modules
+  Agent --> Proposal[Side-effect-free action proposal]
+  Proposal --> Confirm[Explicit user confirmation]
+  Confirm -->|REST mutation| API
   Modules --> Models[Prisma models / repositories]
   Models --> DB[(MySQL)]
   API --> Agent
@@ -56,6 +59,8 @@ The local environment runs MySQL in Docker while Node processes run on the host.
 
 - API versioning begins at `/api/v1`.
 - All mutations are validated before reaching controllers.
+- Operational mutations resolve the authenticated actor, enforce permissions, and recheck conflicts inside domain services.
+- AI action proposals are side-effect-free; only explicit browser confirmation calls a REST mutation.
 - Multi-record writes use Prisma transactions.
 - OpenAI receives only service results required for the current question.
 - AI session persistence is accessed through an internal service/model boundary and is bounded to 12 messages.

@@ -16,6 +16,10 @@ export const assignmentsController = {
   async remove(request: Request, response: Response) { await assignmentsService.remove(request.params.id as string); return sendSuccess(response, null, "Assignment deleted"); },
   async setStatus(request: Request, response: Response) {
     const userId = (request as AuthenticatedRequest).auth.userId;
-    return sendSuccess(response, await assignmentsService.setStatus(request.params.id as string, userId, request.body.status), "Assignment status updated");
+    return sendSuccess(
+      response,
+      await assignmentsService.setStatus(request.params.id as string, userId, request.body.status),
+      "Assignment status update confirmed"
+    );
   }
 };

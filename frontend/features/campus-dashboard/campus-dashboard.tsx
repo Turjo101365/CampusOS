@@ -8,6 +8,7 @@ import { AssignmentsList } from "../../components/dashboard/assignments-list";
 import { CampusOverview } from "../../components/dashboard/campus-overview";
 import { EventsList } from "../../components/dashboard/events-list";
 import { PageHeader } from "../../components/dashboard/page-header";
+import { NotificationsPanel } from "../../components/notifications/notifications-panel";
 import { RoomsGrid } from "../../components/rooms/rooms-grid";
 import { ErrorState, LoadingState } from "../../components/shared/data-state";
 import { ScheduleList } from "../../components/schedule/schedule-list";
@@ -20,24 +21,52 @@ const viewCopy: Record<DashboardView, [string, string]> = {
   events: ["Campus events", "Upcoming talks, workshops, and community activities."],
   assignments: ["Assignments", "Deadlines and submission status across your courses."],
   announcements: ["Announcements", "Active notices from departments and campus services."],
+  notifications: ["Notifications", "Proactive alerts CampusOS generated on your behalf."],
   assistant: ["AI assistant", "Ask a question; CampusOS will select the right live service tools."]
 };
 
 export function CampusDashboard() {
   const [activeView, setActiveView] = useState<DashboardView>("overview");
+  const [pendingPrompt, setPendingPrompt] = useState<string | undefined>(undefined);
   const { data, isLoading, error, refresh } = useCampusData();
   const [title, description] = viewCopy[activeView];
 
+  function requestStudyPlan(prompt: string): void {
+    setPendingPrompt(prompt);
+    setActiveView("assistant");
+  }
+
   let content = null;
-  if (activeView === "assistant") content = <AiAssistant />;
+  if (activeView === "assistant") {
+    content = (
+      <AiAssistant
+        onMutated={() => void refresh()}
+        initialPrompt={pendingPrompt}
+        onInitialPromptConsumed={() => setPendingPrompt(undefined)}
+      />
+    );
+  } else if (activeView === "notifications") content = <NotificationsPanel />;
   else if (isLoading) content = <LoadingState />;
   else if (error) content = <ErrorState message={error} onRetry={() => void refresh()} />;
-  else if (activeView === "overview") content = <CampusOverview data={data} onViewChange={setActiveView} />;
-  else if (activeView === "schedule") content = <section className="rounded-lg border bg-card p-5"><ScheduleList schedules={data.schedules} /></section>;
-  else if (activeView === "rooms") content = <RoomsGrid rooms={data.rooms} />;
-  else if (activeView === "events") content = <EventsList events={data.events} />;
-  else if (activeView === "assignments") content = <AssignmentsList assignments={data.assignments} />;
-  else content = <AnnouncementsList announcements={data.announcements} />;
+  else if (activeView === "overview") content = <CampusOverview data={data} onViewChange={setActiveView} onRequestPlan={requestStudyPlan} />;
+  else if (activeView === "schedule") content = <section className="glass-surface rounded-xl p-6"><ScheduleList schedules={data.schedules} onMutated={() => void refresh()} /></section>;
+  else if (activeView === "rooms") content = <RoomsGrid rooms={data.rooms} onMutated={() => void refresh()} />;
+  else if (activeView === "events") content = <EventsList events={data.events} onMutated={() => void refresh()} />;
+  else if (activeView === "assignments") content = <AssignmentsList assignments={data.assignments} onMutated={() => void refresh()} />;
+  else content = <AnnouncementsList announcements={data.announcements} onMutated={() => void refresh()} />;
 
-  return <AppShell activeView={activeView} onViewChange={setActiveView}><PageHeader title={title} description={description} onRefresh={() => void refresh()} isRefreshing={isLoading} /><div className="p-4 sm:p-5 lg:p-8">{content}</div></AppShell>;
+  return (
+    <AppShell activeView={activeView} onViewChange={setActiveView}>
+      <PageHeader
+        title={title}
+        description={description}
+        onRefresh={() => void refresh()}
+        isRefreshing={isLoading}
+        onViewAllNotifications={() => setActiveView("notifications")}
+        searchData={data}
+        onNavigate={setActiveView}
+      />
+      <div key={activeView} className="animate-fade-in-up p-6 sm:p-8 lg:p-10">{content}</div>
+    </AppShell>
+  );
 }

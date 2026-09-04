@@ -33,13 +33,13 @@ Error:
 | `GET, POST` | `/rooms` | List or create rooms |
 | `GET` | `/rooms/available` | Find conflict-free rooms by date/time/capacity/features |
 | `GET, PATCH, DELETE` | `/rooms/:id` | Read, update, or remove a room |
-| `POST` | `/rooms/:id/bookings` | Create a validated room booking |
+| `POST` | `/rooms/:id/bookings` | Confirm a permission-checked, conflict-free room booking |
 | `GET, POST` | `/events` | List or create events |
 | `GET, PATCH, DELETE` | `/events/:id` | Read, update, or remove an event |
-| `POST` | `/events/:id/registrations` | Register a user with capacity enforcement |
+| `POST` | `/events/:id/registrations` | Confirm registration with ownership, capacity, and schedule checks |
 | `GET, POST` | `/assignments` | List or create assignments |
 | `GET, PATCH, DELETE` | `/assignments/:id` | Read, update, or remove an assignment |
-| `PATCH` | `/assignments/:id/status` | Update current student submission status |
+| `PATCH` | `/assignments/:id/status` | Confirm an enrolled student's legal submission-status transition |
 | `GET, POST` | `/announcements` | List or create announcements |
 | `GET, PATCH, DELETE` | `/announcements/:id` | Read, update, or remove an announcement |
 | `GET, POST` | `/users` | List or create users |
@@ -74,3 +74,46 @@ Content-Type: application/json
 ```
 
 Dates sent to mutation endpoints are ISO 8601 date-times. Room availability uses `YYYY-MM-DD` dates and `HH:mm` 24-hour times.
+
+## Operational action contracts
+
+Operational routes derive the actor from authentication. `x-user-id` is only the local development stand-in. Room bookings ignore any client-supplied display name and persist the authenticated user's name. Event registration targets the current user unless an administrator explicitly supplies another `userId`. Assignment status updates are student-only, enrollment-scoped, deadline-aware, and cannot set `GRADED`.
+
+Room booking:
+
+```http
+POST /api/v1/rooms/{roomId}/bookings
+Content-Type: application/json
+
+{ "date": "2026-09-07", "startTime": "14:00", "endTime": "15:00", "purpose": "Project meeting" }
+```
+
+Event registration:
+
+```http
+POST /api/v1/events/{eventId}/registrations
+Content-Type: application/json
+
+{}
+```
+
+Assignment status:
+
+```http
+PATCH /api/v1/assignments/{assignmentId}/status
+Content-Type: application/json
+
+{ "status": "IN_PROGRESS" }
+```
+
+All three return an action receipt inside the shared response envelope:
+
+```json
+{
+  "action": "ROOM_BOOKING",
+  "status": "CONFIRMED",
+  "message": "7A01 is booked for 2026-09-07 from 14:00 to 15:00.",
+  "confirmedAt": "2026-09-04T12:00:00.000Z",
+  "result": {}
+}
+```

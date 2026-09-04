@@ -26,6 +26,6 @@ export const roomsController = {
   },
   async book(request: Request, response: Response) {
     const userId = (request as AuthenticatedRequest).auth.userId;
-    return sendSuccess(response, await roomsService.book(request.params.id as string, userId, request.body as BookingInput), "Room booked", 201);
+    return sendSuccess(response, await roomsService.book(request.params.id as string, userId, request.body as BookingInput), "Room booking confirmed", 201);
   }
 };

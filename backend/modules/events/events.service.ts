@@ -1,5 +1,10 @@
 import { AppError } from "../../utils/AppError.js";
+import { createActionConfirmation } from "../../utils/actionConfirmation.js";
+import { dayOfWeekForDate, timeForSchedule } from "../../utils/dateTime.js";
 import { roomsModel } from "../rooms/rooms.model.js";
+import { scheduleModel } from "../schedule/schedule.model.js";
+import { authorizationService } from "../users/authorization.service.js";
+import { usersService } from "../users/users.service.js";
 import { eventsModel } from "./events.model.js";
 import type { EventInput, EventListQuery, EventUpdateInput } from "./events.validation.js";
 
@@ -33,17 +38,36 @@ export const eventsService = {
     return eventsModel.update(id, input, await resolveRoomId(input.roomNumber));
   },
   async remove(id: string) { await this.getById(id); await eventsModel.delete(id); },
-  async register(eventId: string, externalUserId: string) {
+  async register(eventId: string, actorExternalUserId: string, targetExternalUserId = actorExternalUserId) {
+    const actor = await authorizationService.requireActor(actorExternalUserId, "EVENT_REGISTER");
+    authorizationService.requireSelfOrAdmin(actor, targetExternalUserId);
+    await usersService.getById(targetExternalUserId);
     const event = await this.getById(eventId);
-    if (event.status === "CANCELLED" || event.status === "COMPLETED") {
+    if (event.status !== "UPCOMING" || event.startsAt <= new Date()) {
       throw new AppError("Registration is closed", 409, "REGISTRATION_CLOSED");
     }
     if (event._count.registrations >= event.capacity) {
       throw new AppError("Event is at capacity", 409, "EVENT_FULL");
     }
-    if (await eventsModel.findRegistration(eventId, externalUserId)) {
+    if (await eventsModel.findRegistration(eventId, targetExternalUserId)) {
       throw new AppError("User is already registered", 409, "ALREADY_REGISTERED");
     }
-    return eventsModel.register(eventId, externalUserId);
+    const dayOfWeek = dayOfWeekForDate(event.startsAt);
+    const startTime = timeForSchedule(event.startsAt);
+    const endTime = timeForSchedule(event.endsAt);
+    const [eventConflict, bookingConflict, scheduleConflict] = await Promise.all([
+      eventsModel.findUserEventConflict(targetExternalUserId, eventId, event.startsAt, event.endsAt),
+      roomsModel.findUserBookingConflict(targetExternalUserId, event.startsAt, event.endsAt),
+      scheduleModel.findUserConflict(targetExternalUserId, dayOfWeek, startTime, endTime)
+    ]);
+    if (eventConflict || bookingConflict || scheduleConflict) {
+      throw new AppError("The user already has a campus commitment during this event", 409, "EVENT_SCHEDULE_CONFLICT");
+    }
+    const registration = await eventsModel.register(eventId, targetExternalUserId);
+    return createActionConfirmation(
+      "EVENT_REGISTRATION",
+      `Registration for ${event.name} is confirmed.`,
+      registration
+    );
   }
 };
