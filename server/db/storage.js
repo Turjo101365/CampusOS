@@ -1,92 +1,115 @@
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { DatabaseSync } from 'node:sqlite';
-import { runMigration } from './migrate.js';
-import {
-  syncCreateSchedule,
-  syncUpdateSchedule,
-  syncDeleteSchedule,
-  syncCreateRoom,
-  syncUpdateRoom,
-  syncDeleteRoom,
-  syncBookRoom,
-  syncCancelBooking,
-  syncCreateEvent,
-  syncUpdateEvent,
-  syncDeleteEvent,
-  syncRegisterEvent,
-  syncCancelRegistration,
-  syncCreateAnnouncement,
-  syncUpdateAnnouncement,
-  syncDeleteAnnouncement,
-  syncCreateAssignment,
-  syncUpdateAssignment,
-  syncDeleteAssignment,
-  syncResetToSeed
-} from './mysqlSync.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const SEED_DATA_DIR = path.resolve(__dirname, '../../data');
 const STORAGE_DIR = path.resolve(__dirname, '../data');
-const DB_PATH = path.join(STORAGE_DIR, 'campusos.sqlite');
+const DB_FILE_PATH = path.join(STORAGE_DIR, 'campusos_db.json');
 
-let db = null;
+// In-memory cache backed by persistent atomic disk writes
+let db = {
+  schedules: [],
+  rooms: [],
+  events: [],
+  announcements: [],
+  assignments: []
+};
 
-function getDb() {
-  if (!db) {
-    db = new DatabaseSync(DB_PATH);
-  }
-  return db;
+// Ensure storage directory exists
+if (!fs.existsSync(STORAGE_DIR)) {
+  fs.mkdirSync(STORAGE_DIR, { recursive: true });
 }
 
+function loadSeedData() {
+  const readJson = (filename) => {
+    const fullPath = path.join(SEED_DATA_DIR, filename);
+    if (!fs.existsSync(fullPath)) return [];
+    return JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+  };
+
+  return {
+    schedules: readJson('schedules.json'),
+    rooms: readJson('rooms.json'),
+    events: readJson('events.json'),
+    announcements: readJson('announcements.json'),
+    assignments: readJson('assignments.json')
+  };
+}
+
+/**
+ * Atomic file swapping to guarantee ACID durability.
+ * Writes to a temporary file first, then atomically renames to target.
+ */
+function flushToDisk() {
+  try {
+    const tempPath = `${DB_FILE_PATH}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+    fs.writeFileSync(tempPath, JSON.stringify(db, null, 2), 'utf8');
+    fs.renameSync(tempPath, DB_FILE_PATH);
+  } catch (err) {
+    console.error('[CampusOS Storage] Failed to write atomic snapshot to disk:', err);
+  }
+}
+
+/**
+ * Initialize persistent storage.
+ * If campusos_db.json does not exist or forceReset is true, loads from data/*.json seeds.
+ * Otherwise, loads persisted state from disk.
+ */
 export function initStorage(forceReset = false) {
-  runMigration(forceReset);
-  getDb();
-  console.log('[CampusOS Storage] SQLite relational database ready and initialized.');
+  if (forceReset || !fs.existsSync(DB_FILE_PATH)) {
+    console.log('[CampusOS Storage] Initializing persistent store from data/*.json seeds...');
+    db = loadSeedData();
+    flushToDisk();
+    console.log(`[CampusOS Storage] Seed data loaded into persistent store: ${db.schedules.length} schedules, ${db.rooms.length} rooms, ${db.events.length} events, ${db.announcements.length} announcements, ${db.assignments.length} assignments.`);
+  } else {
+    try {
+      console.log('[CampusOS Storage] Loading persistent database from disk...');
+      const content = fs.readFileSync(DB_FILE_PATH, 'utf8');
+      db = JSON.parse(content);
+      console.log(`[CampusOS Storage] Successfully loaded from ${DB_FILE_PATH}: ${db.schedules?.length || 0} schedules, ${db.rooms?.length || 0} rooms, ${db.events?.length || 0} events, ${db.announcements?.length || 0} announcements, ${db.assignments?.length || 0} assignments.`);
+    } catch (err) {
+      console.error('[CampusOS Storage] Persistent store was corrupt, reseeding from data/*.json:', err);
+      db = loadSeedData();
+      flushToDisk();
+    }
+  }
 }
 
 export function resetToSeed() {
-  const summary = runMigration(true);
-  syncResetToSeed();
-  return { success: true, message: 'Database reset to original seed data.', summary };
+  db = loadSeedData();
+  flushToDisk();
+  return { success: true, message: 'Database reset to original seed data.' };
 }
 
 // ==================== SCHEDULES ====================
 export function getAllSchedules(filters = {}) {
-  const d = getDb();
-  let sql = 'SELECT * FROM schedules WHERE 1=1';
-  const params = [];
-
+  let list = [...(db.schedules || [])];
   if (filters.day) {
-    sql += ' AND LOWER(day) = LOWER(?)';
-    params.push(filters.day);
+    list = list.filter(s => s.day.toLowerCase() === filters.day.toLowerCase());
   }
   if (filters.course) {
-    sql += ' AND (LOWER(course) LIKE LOWER(?) OR LOWER(title) LIKE LOWER(?))';
-    params.push(`%${filters.course}%`, `%${filters.course}%`);
+    const q = filters.course.toLowerCase();
+    list = list.filter(s => s.course.toLowerCase().includes(q) || s.title.toLowerCase().includes(q));
   }
   if (filters.room) {
-    sql += ' AND LOWER(room) = LOWER(?)';
-    params.push(filters.room);
+    list = list.filter(s => s.room.toLowerCase() === filters.room.toLowerCase());
   }
   if (filters.instructor) {
-    sql += ' AND LOWER(instructor) LIKE LOWER(?)';
-    params.push(`%${filters.instructor}%`);
+    const inst = filters.instructor.toLowerCase();
+    list = list.filter(s => s.instructor.toLowerCase().includes(inst));
   }
-
-  sql += ' ORDER BY day, start_time';
-  return d.prepare(sql).all(...params);
+  return list;
 }
 
 export function getScheduleById(id) {
-  const d = getDb();
-  return d.prepare('SELECT * FROM schedules WHERE id = ?').get(id) || null;
+  return (db.schedules || []).find(s => s.id === id) || null;
 }
 
 export function createSchedule(data) {
-  const d = getDb();
-  const id = data.id || `sch-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
+  const id = data.id || `sch-${String(db.schedules.length + 1).padStart(3, '0')}`;
   const record = {
     id,
     course: data.course?.trim() || '',
@@ -98,101 +121,44 @@ export function createSchedule(data) {
     instructor: data.instructor?.trim() || 'TBA',
     section: data.section?.trim() || 'A'
   };
-
-  d.prepare(`
-    INSERT INTO schedules (id, course, title, day, start_time, end_time, room, instructor, section)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    record.id,
-    record.course,
-    record.title,
-    record.day,
-    record.start_time,
-    record.end_time,
-    record.room,
-    record.instructor,
-    record.section
-  );
-
-  syncCreateSchedule(record);
+  db.schedules.push(record);
+  flushToDisk();
   return record;
 }
 
 export function updateSchedule(id, updates) {
-  const d = getDb();
-  const existing = getScheduleById(id);
-  if (!existing) return null;
-
-  const merged = { ...existing, ...updates };
-  d.prepare(`
-    UPDATE schedules
-    SET course = ?, title = ?, day = ?, start_time = ?, end_time = ?, room = ?, instructor = ?, section = ?
-    WHERE id = ?
-  `).run(
-    merged.course,
-    merged.title,
-    merged.day,
-    merged.start_time,
-    merged.end_time,
-    merged.room,
-    merged.instructor,
-    merged.section,
-    id
-  );
-
-  syncUpdateSchedule(merged);
-  return merged;
+  const index = db.schedules.findIndex(s => s.id === id);
+  if (index === -1) return null;
+  db.schedules[index] = { ...db.schedules[index], ...updates };
+  flushToDisk();
+  return db.schedules[index];
 }
 
 export function deleteSchedule(id) {
-  const d = getDb();
-  const res = d.prepare('DELETE FROM schedules WHERE id = ?').run(id);
-  if (res.changes > 0) {
-    syncDeleteSchedule(id);
-  }
-  return res.changes > 0;
+  const index = db.schedules.findIndex(s => s.id === id);
+  if (index === -1) return false;
+  db.schedules.splice(index, 1);
+  flushToDisk();
+  return true;
 }
 
 // ==================== ROOMS & BOOKINGS ====================
 export function getAllRooms(filters = {}) {
-  const d = getDb();
-  let sql = 'SELECT * FROM rooms WHERE 1=1';
-  const params = [];
-
+  let list = [...(db.rooms || [])];
   if (filters.type) {
-    sql += ' AND LOWER(type) = LOWER(?)';
-    params.push(filters.type);
+    list = list.filter(r => r.type.toLowerCase() === filters.type.toLowerCase());
   }
   if (filters.min_capacity) {
-    sql += ' AND capacity >= ?';
-    params.push(Number(filters.min_capacity));
+    const min = parseInt(filters.min_capacity, 10);
+    list = list.filter(r => r.capacity >= min);
   }
   if (filters.floor) {
-    sql += ' AND floor = ?';
-    params.push(Number(filters.floor));
+    const fl = parseInt(filters.floor, 10);
+    list = list.filter(r => r.floor === fl);
   }
   if (filters.status) {
-    sql += ' AND LOWER(status) = LOWER(?)';
-    params.push(filters.status);
+    list = list.filter(r => r.status.toLowerCase() === filters.status.toLowerCase());
   }
-
-  sql += ' ORDER BY room_number';
-  const rawRooms = d.prepare(sql).all(...params);
-
-  // Fetch all bookings
-  const bookings = d.prepare('SELECT * FROM bookings ORDER BY date, start_time').all();
-  const bookingsMap = {};
-  for (const b of bookings) {
-    if (!bookingsMap[b.room_number]) bookingsMap[b.room_number] = [];
-    bookingsMap[b.room_number].push(b);
-  }
-
-  let list = rawRooms.map(r => ({
-    ...r,
-    equipment: typeof r.equipment === 'string' ? JSON.parse(r.equipment) : r.equipment,
-    bookings: bookingsMap[r.room_number] || []
-  }));
-
   if (filters.equipment) {
     const requiredEq = Array.isArray(filters.equipment)
       ? filters.equipment.map(e => e.toLowerCase())
@@ -201,97 +167,49 @@ export function getAllRooms(filters = {}) {
       requiredEq.every(req => r.equipment.some(eq => eq.toLowerCase().includes(req)))
     );
   }
-
   return list;
 }
 
 export function getRoomById(id) {
-  const d = getDb();
-  const r = d.prepare('SELECT * FROM rooms WHERE id = ?').get(id);
-  if (!r) return null;
-  const bookings = d.prepare('SELECT * FROM bookings WHERE room_number = ? ORDER BY date, start_time').all(r.room_number);
-  return {
-    ...r,
-    equipment: typeof r.equipment === 'string' ? JSON.parse(r.equipment) : r.equipment,
-    bookings
-  };
+  return (db.rooms || []).find(r => r.id === id) || null;
 }
 
 export function getRoomByNumber(roomNumber) {
-  const d = getDb();
-  const r = d.prepare('SELECT * FROM rooms WHERE UPPER(room_number) = UPPER(?)').get(roomNumber.trim());
-  if (!r) return null;
-  const bookings = d.prepare('SELECT * FROM bookings WHERE UPPER(room_number) = UPPER(?) ORDER BY date, start_time').all(roomNumber.trim());
-  return {
-    ...r,
-    equipment: typeof r.equipment === 'string' ? JSON.parse(r.equipment) : r.equipment,
-    bookings
-  };
+  const clean = roomNumber.trim().toUpperCase();
+  return (db.rooms || []).find(r => r.room_number.toUpperCase() === clean) || null;
 }
 
 export function createRoom(data) {
-  const d = getDb();
-  const id = data.id || `room-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
-  const eq = Array.isArray(data.equipment) ? data.equipment : (data.equipment ? data.equipment.split(',').map(s => s.trim()) : []);
-
-  d.prepare(`
-    INSERT INTO rooms (id, room_number, type, capacity, equipment, floor, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  const id = data.id || `room-${String(db.rooms.length + 1).padStart(3, '0')}`;
+  const record = {
     id,
-    data.room_number?.trim() || '',
-    data.type || 'classroom',
-    Number(data.capacity) || 40,
-    JSON.stringify(eq),
-    Number(data.floor) || 7,
-    data.status || 'available'
-  );
-
-  const created = getRoomById(id);
-  syncCreateRoom(created);
-  return created;
+    room_number: data.room_number?.trim() || '',
+    type: data.type || 'classroom',
+    capacity: Number(data.capacity) || 40,
+    equipment: Array.isArray(data.equipment) ? data.equipment : (data.equipment ? data.equipment.split(',').map(s => s.trim()) : []),
+    floor: Number(data.floor) || 7,
+    status: data.status || 'available',
+    bookings: data.bookings || []
+  };
+  db.rooms.push(record);
+  flushToDisk();
+  return record;
 }
 
 export function updateRoom(id, updates) {
-  const d = getDb();
-  const existing = getRoomById(id);
-  if (!existing) return null;
-
-  const eq = updates.equipment !== undefined
-    ? (Array.isArray(updates.equipment) ? updates.equipment : updates.equipment.split(',').map(s => s.trim()))
-    : existing.equipment;
-
-  const merged = { ...existing, ...updates, equipment: eq };
-
-  d.prepare(`
-    UPDATE rooms
-    SET room_number = ?, type = ?, capacity = ?, equipment = ?, floor = ?, status = ?
-    WHERE id = ?
-  `).run(
-    merged.room_number,
-    merged.type,
-    Number(merged.capacity),
-    JSON.stringify(merged.equipment),
-    Number(merged.floor),
-    merged.status,
-    id
-  );
-
-  const updated = getRoomById(id);
-  syncUpdateRoom(updated);
-  return updated;
+  const index = db.rooms.findIndex(r => r.id === id);
+  if (index === -1) return null;
+  db.rooms[index] = { ...db.rooms[index], ...updates };
+  flushToDisk();
+  return db.rooms[index];
 }
 
 export function deleteRoom(id) {
-  const d = getDb();
-  const room = getRoomById(id);
-  if (!room) return false;
-  d.prepare('DELETE FROM bookings WHERE room_number = ?').run(room.room_number);
-  const res = d.prepare('DELETE FROM rooms WHERE id = ?').run(id);
-  if (res.changes > 0) {
-    syncDeleteRoom(id);
-  }
-  return res.changes > 0;
+  const index = db.rooms.findIndex(r => r.id === id);
+  if (index === -1) return false;
+  db.rooms.splice(index, 1);
+  flushToDisk();
+  return true;
 }
 
 function timeToMinutes(t) {
@@ -318,7 +236,7 @@ export function checkRoomClash(roomNumber, date, startTime, endTime, excludeBook
     return { hasClash: true, reason: `Start time (${startTime}) must be before end time (${endTime}).` };
   }
 
-  // 1. Check existing room bookings in SQLite
+  // 1. Check existing room bookings on this date
   const conflictingBooking = (room.bookings || []).find(b => {
     if (excludeBookingId && b.booking_id === excludeBookingId) return false;
     if (b.date !== date) return false;
@@ -336,10 +254,9 @@ export function checkRoomClash(roomNumber, date, startTime, endTime, excludeBook
 
   // 2. Check scheduled timetable classes on that day of week
   const dayOfWeek = getDayOfWeekFromDate(date);
-  const d = getDb();
-  const classes = d.prepare('SELECT * FROM schedules WHERE UPPER(room) = UPPER(?) AND LOWER(day) = LOWER(?)').all(room.room_number, dayOfWeek);
-
-  const conflictingClass = classes.find(s => {
+  const conflictingClass = (db.schedules || []).find(s => {
+    if (s.room.toUpperCase() !== room.room_number.toUpperCase()) return false;
+    if (s.day.toLowerCase() !== dayOfWeek.toLowerCase()) return false;
     const cStart = timeToMinutes(s.start_time);
     const cEnd = timeToMinutes(s.end_time);
     return !(reqEnd <= cStart || reqStart >= cEnd);
@@ -378,7 +295,6 @@ export function bookRoom(roomNumber, bookingData) {
   const bookingId = `bk-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
   const newBooking = {
     booking_id: bookingId,
-    room_number: room.room_number,
     booked_by: booked_by || 'Student',
     date,
     start_time,
@@ -386,22 +302,10 @@ export function bookRoom(roomNumber, bookingData) {
     purpose: purpose || 'Academic Discussion'
   };
 
-  const d = getDb();
-  d.prepare(`
-    INSERT INTO bookings (booking_id, room_number, booked_by, date, start_time, end_time, purpose)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    newBooking.booking_id,
-    newBooking.room_number,
-    newBooking.booked_by,
-    newBooking.date,
-    newBooking.start_time,
-    newBooking.end_time,
-    newBooking.purpose
-  );
-
-  syncBookRoom(newBooking);
-  return { room: getRoomByNumber(roomNumber), booking: newBooking };
+  if (!room.bookings) room.bookings = [];
+  room.bookings.push(newBooking);
+  flushToDisk();
+  return { room, booking: newBooking };
 }
 
 export function cancelRoomBooking(roomNumberOrId, bookingId) {
@@ -410,137 +314,83 @@ export function cancelRoomBooking(roomNumberOrId, bookingId) {
     throw new Error(`Room ${roomNumberOrId} not found.`);
   }
 
-  const d = getDb();
-  const existing = d.prepare('SELECT * FROM bookings WHERE booking_id = ?').get(bookingId);
-  if (!existing) {
-    throw new Error(`Booking ID ${bookingId} not found.`);
+  const index = (room.bookings || []).findIndex(b => b.booking_id === bookingId);
+  if (index === -1) {
+    throw new Error(`Booking ID ${bookingId} not found for room ${room.room_number}.`);
   }
 
-  d.prepare('DELETE FROM bookings WHERE booking_id = ?').run(bookingId);
-  syncCancelBooking(bookingId);
-  return { room: getRoomByNumber(room.room_number), cancelledBooking: existing };
+  const [removed] = room.bookings.splice(index, 1);
+  flushToDisk();
+  return { room, cancelledBooking: removed };
 }
 
 // ==================== EVENTS & REGISTRATIONS ====================
 export function getAllEvents(filters = {}) {
-  const d = getDb();
-  let sql = 'SELECT * FROM events WHERE 1=1';
-  const params = [];
-
+  let list = [...(db.events || [])];
   if (filters.status) {
-    sql += ' AND LOWER(status) = LOWER(?)';
-    params.push(filters.status);
+    list = list.filter(e => e.status.toLowerCase() === filters.status.toLowerCase());
   }
   if (filters.organizer) {
-    sql += ' AND LOWER(organizer) LIKE LOWER(?)';
-    params.push(`%${filters.organizer}%`);
+    const org = filters.organizer.toLowerCase();
+    list = list.filter(e => e.organizer.toLowerCase().includes(org));
   }
   if (filters.date) {
-    sql += ' AND date = ?';
-    params.push(filters.date);
+    list = list.filter(e => e.date === filters.date);
   }
-
-  sql += ' ORDER BY date, start_time';
-  const events = d.prepare(sql).all(...params);
-
-  // Fetch registrations
-  const regs = d.prepare('SELECT * FROM registrations').all();
-  const regMap = {};
-  for (const r of regs) {
-    if (!regMap[r.event_id]) regMap[r.event_id] = [];
-    regMap[r.event_id].push({ student_id: r.student_id, name: r.name });
-  }
-
-  return events.map(e => ({
-    ...e,
-    registrations: regMap[e.id] || []
-  }));
+  return list;
 }
 
 export function getEventById(id) {
-  const d = getDb();
-  const e = d.prepare('SELECT * FROM events WHERE id = ?').get(id);
-  if (!e) return null;
-  const registrations = d.prepare('SELECT student_id, name FROM registrations WHERE event_id = ?').all(id);
-  return {
-    ...e,
-    registrations
-  };
+  return (db.events || []).find(e => e.id === id) || null;
 }
 
 export function findEventByName(nameQuery) {
-  const d = getDb();
-  const q = `%${nameQuery.trim().toLowerCase()}%`;
-  const e = d.prepare('SELECT * FROM events WHERE LOWER(name) LIKE ? OR LOWER(id) = ?').get(q, nameQuery.trim().toLowerCase());
-  if (!e) return null;
-  return getEventById(e.id);
+  const q = nameQuery.toLowerCase().trim();
+  return (db.events || []).find(e => e.name.toLowerCase().includes(q) || e.id.toLowerCase() === q) || null;
 }
 
 export function createEvent(data) {
-  const d = getDb();
-  const id = data.id || `evt-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
-
-  d.prepare(`
-    INSERT INTO events (id, name, description, date, start_time, end_time, end_date, venue, organizer, capacity, registered, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  const id = data.id || `evt-${String(db.events.length + 1).padStart(3, '0')}`;
+  const record = {
     id,
-    data.name?.trim() || '',
-    data.description?.trim() || '',
-    data.date || '',
-    data.start_time || '10:00',
-    data.end_time || '12:00',
-    data.end_date || data.date || '',
-    data.venue?.trim() || '7C01',
-    data.organizer?.trim() || 'CSE Department',
-    Number(data.capacity) || 50,
-    Number(data.registered) || 0,
-    data.status || 'upcoming'
-  );
-
-  const created = getEventById(id);
-  syncCreateEvent(created);
-  return created;
+    name: data.name?.trim() || '',
+    description: data.description?.trim() || '',
+    date: data.date || '',
+    start_time: data.start_time || '10:00',
+    end_time: data.end_time || '12:00',
+    end_date: data.end_date || data.date || '',
+    venue: data.venue?.trim() || '7C01',
+    organizer: data.organizer?.trim() || 'CSE Department',
+    capacity: Number(data.capacity) || 50,
+    registered: Number(data.registered) || 0,
+    registrations: data.registrations || [],
+    status: data.status || 'upcoming'
+  };
+  db.events.push(record);
+  flushToDisk();
+  return record;
 }
 
 export function updateEvent(id, updates) {
-  const d = getDb();
-  const existing = getEventById(id);
-  if (!existing) return null;
-
-  const merged = { ...existing, ...updates };
-  d.prepare(`
-    UPDATE events
-    SET name = ?, description = ?, date = ?, start_time = ?, end_time = ?, end_date = ?, venue = ?, organizer = ?, capacity = ?, registered = ?, status = ?
-    WHERE id = ?
-  `).run(
-    merged.name,
-    merged.description,
-    merged.date,
-    merged.start_time,
-    merged.end_time,
-    merged.end_date,
-    merged.venue,
-    merged.organizer,
-    Number(merged.capacity),
-    Number(merged.registered),
-    merged.status,
-    id
-  );
-
-  const updated = getEventById(id);
-  syncUpdateEvent(updated);
-  return updated;
+  const index = db.events.findIndex(e => e.id === id);
+  if (index === -1) return null;
+  db.events[index] = { ...db.events[index], ...updates };
+  if (Array.isArray(db.events[index].registrations)) {
+    db.events[index].registered = db.events[index].registrations.length;
+    if (db.events[index].registered >= db.events[index].capacity && db.events[index].status === 'upcoming') {
+      db.events[index].status = 'full';
+    }
+  }
+  flushToDisk();
+  return db.events[index];
 }
 
 export function deleteEvent(id) {
-  const d = getDb();
-  d.prepare('DELETE FROM registrations WHERE event_id = ?').run(id);
-  const res = d.prepare('DELETE FROM events WHERE id = ?').run(id);
-  if (res.changes > 0) {
-    syncDeleteEvent(id);
-  }
-  return res.changes > 0;
+  const index = db.events.findIndex(e => e.id === id);
+  if (index === -1) return false;
+  db.events.splice(index, 1);
+  flushToDisk();
+  return true;
 }
 
 export function registerForEvent(eventIdOrName, studentInfo) {
@@ -559,25 +409,26 @@ export function registerForEvent(eventIdOrName, studentInfo) {
   const student_id = studentInfo.student_id?.trim() || '20-40532';
   const name = studentInfo.name?.trim() || 'Current Student';
 
-  const d = getDb();
-  const existing = d.prepare('SELECT * FROM registrations WHERE event_id = ? AND student_id = ?').get(event.id, student_id);
+  if (!event.registrations) event.registrations = [];
+
+  const existing = event.registrations.find(r => r.student_id === student_id);
   if (existing) {
     throw new Error(`Student ${name} (${student_id}) is already registered for this event.`);
   }
 
-  if (event.registered >= event.capacity) {
-    d.prepare("UPDATE events SET status = 'full' WHERE id = ?").run(event.id);
+  if (event.registrations.length >= event.capacity) {
+    event.status = 'full';
+    flushToDisk();
     throw new Error(`Event "${event.name}" is at maximum capacity (${event.capacity}/${event.capacity}).`);
   }
 
-  d.prepare('INSERT INTO registrations (event_id, student_id, name) VALUES (?, ?, ?)').run(event.id, student_id, name);
-
-  const newRegistered = event.registered + 1;
-  const newStatus = newRegistered >= event.capacity ? 'full' : event.status;
-  d.prepare('UPDATE events SET registered = ?, status = ? WHERE id = ?').run(newRegistered, newStatus, event.id);
-
-  syncRegisterEvent(event.id, student_id, name);
-  return { event: getEventById(event.id), registration: { student_id, name } };
+  event.registrations.push({ student_id, name });
+  event.registered = event.registrations.length;
+  if (event.registered >= event.capacity) {
+    event.status = 'full';
+  }
+  flushToDisk();
+  return { event, registration: { student_id, name } };
 }
 
 export function cancelEventRegistration(eventIdOrName, studentId) {
@@ -586,202 +437,133 @@ export function cancelEventRegistration(eventIdOrName, studentId) {
     throw new Error(`Event "${eventIdOrName}" not found.`);
   }
 
-  const d = getDb();
-  const existing = d.prepare('SELECT * FROM registrations WHERE event_id = ? AND student_id = ?').get(event.id, studentId);
-  if (!existing) {
+  const index = (event.registrations || []).findIndex(r => r.student_id === studentId);
+  if (index === -1) {
     throw new Error(`Registration for student ID ${studentId} not found in event "${event.name}".`);
   }
 
-  d.prepare('DELETE FROM registrations WHERE event_id = ? AND student_id = ?').run(event.id, studentId);
-
-  const newRegistered = Math.max(0, event.registered - 1);
-  const newStatus = event.status === 'full' && newRegistered < event.capacity ? 'upcoming' : event.status;
-  d.prepare('UPDATE events SET registered = ?, status = ? WHERE id = ?').run(newRegistered, newStatus, event.id);
-
-  syncCancelRegistration(event.id, studentId);
-  return { event: getEventById(event.id), cancelled: existing };
+  const [removed] = event.registrations.splice(index, 1);
+  event.registered = event.registrations.length;
+  if (event.status === 'full' && event.registered < event.capacity) {
+    event.status = 'upcoming';
+  }
+  flushToDisk();
+  return { event, cancelled: removed };
 }
 
 // ==================== ANNOUNCEMENTS ====================
 export function getAllAnnouncements(filters = {}) {
-  const d = getDb();
-  let sql = 'SELECT * FROM announcements WHERE 1=1';
-  const params = [];
-
+  let list = [...(db.announcements || [])];
   if (filters.priority) {
-    sql += ' AND LOWER(priority) = LOWER(?)';
-    params.push(filters.priority);
+    list = list.filter(a => a.priority.toLowerCase() === filters.priority.toLowerCase());
   }
   if (filters.active_only) {
-    sql += ' AND expires >= ?';
-    params.push('2026-09-04');
+    list = list.filter(a => a.expires >= '2026-09-04');
   }
-
-  sql += ' ORDER BY date DESC, id DESC';
-  return d.prepare(sql).all(...params);
+  return list;
 }
 
 export function getAnnouncementById(id) {
-  const d = getDb();
-  return d.prepare('SELECT * FROM announcements WHERE id = ?').get(id) || null;
+  return (db.announcements || []).find(a => a.id === id) || null;
 }
 
 export function createAnnouncement(data) {
-  const d = getDb();
-  const id = data.id || `ann-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
-
-  d.prepare(`
-    INSERT INTO announcements (id, title, body, date, priority, posted_by, expires)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  const id = data.id || `ann-${String(db.announcements.length + 1).padStart(3, '0')}`;
+  const record = {
     id,
-    data.title?.trim() || '',
-    data.body?.trim() || '',
-    data.date || '2026-09-04',
-    data.priority || 'medium',
-    data.posted_by?.trim() || 'Department Office',
-    data.expires || '2026-09-30'
-  );
-
-  const created = getAnnouncementById(id);
-  syncCreateAnnouncement(created);
-  return created;
+    title: data.title?.trim() || '',
+    body: data.body?.trim() || '',
+    date: data.date || '2026-09-04',
+    priority: data.priority || 'medium',
+    posted_by: data.posted_by?.trim() || 'Department Office',
+    expires: data.expires || '2026-09-30'
+  };
+  db.announcements.unshift(record);
+  flushToDisk();
+  return record;
 }
 
 export function updateAnnouncement(id, updates) {
-  const d = getDb();
-  const existing = getAnnouncementById(id);
-  if (!existing) return null;
-
-  const merged = { ...existing, ...updates };
-  d.prepare(`
-    UPDATE announcements
-    SET title = ?, body = ?, date = ?, priority = ?, posted_by = ?, expires = ?
-    WHERE id = ?
-  `).run(
-    merged.title,
-    merged.body,
-    merged.date,
-    merged.priority,
-    merged.posted_by,
-    merged.expires,
-    id
-  );
-
-  const updated = getAnnouncementById(id);
-  syncUpdateAnnouncement(updated);
-  return updated;
+  const index = db.announcements.findIndex(a => a.id === id);
+  if (index === -1) return null;
+  db.announcements[index] = { ...db.announcements[index], ...updates };
+  flushToDisk();
+  return db.announcements[index];
 }
 
 export function deleteAnnouncement(id) {
-  const d = getDb();
-  const res = d.prepare('DELETE FROM announcements WHERE id = ?').run(id);
-  if (res.changes > 0) {
-    syncDeleteAnnouncement(id);
-  }
-  return res.changes > 0;
+  const index = db.announcements.findIndex(a => a.id === id);
+  if (index === -1) return false;
+  db.announcements.splice(index, 1);
+  flushToDisk();
+  return true;
 }
 
 // ==================== ASSIGNMENTS ====================
 export function getAllAssignments(filters = {}) {
-  const d = getDb();
-  let sql = 'SELECT * FROM assignments WHERE 1=1';
-  const params = [];
-
+  let list = [...(db.assignments || [])];
   if (filters.status) {
-    sql += ' AND LOWER(status) = LOWER(?)';
-    params.push(filters.status);
+    list = list.filter(a => a.status.toLowerCase() === filters.status.toLowerCase());
   }
   if (filters.course) {
-    sql += ' AND (LOWER(course) LIKE LOWER(?) OR LOWER(course_title) LIKE LOWER(?))';
-    params.push(`%${filters.course}%`, `%${filters.course}%`);
+    const c = filters.course.toLowerCase();
+    list = list.filter(a => a.course.toLowerCase().includes(c) || a.course_title.toLowerCase().includes(c));
   }
-
-  sql += ' ORDER BY deadline ASC';
-  return d.prepare(sql).all(...params);
+  return list;
 }
 
 export function getAssignmentById(id) {
-  const d = getDb();
-  return d.prepare('SELECT * FROM assignments WHERE id = ?').get(id) || null;
+  return (db.assignments || []).find(a => a.id === id) || null;
 }
 
 export function createAssignment(data) {
-  const d = getDb();
-  const id = data.id || `asgn-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
-
-  d.prepare(`
-    INSERT INTO assignments (id, course, course_title, title, description, assigned_date, deadline, submission_platform, status, marks)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  const id = data.id || `asgn-${String(db.assignments.length + 1).padStart(3, '0')}`;
+  const record = {
     id,
-    data.course?.trim() || '',
-    data.course_title?.trim() || '',
-    data.title?.trim() || '',
-    data.description?.trim() || '',
-    data.assigned_date || '2026-09-04',
-    data.deadline || '',
-    data.submission_platform || 'Google Classroom',
-    data.status || 'pending',
-    Number(data.marks) || 10
-  );
-
-  const created = getAssignmentById(id);
-  syncCreateAssignment(created);
-  return created;
+    course: data.course?.trim() || '',
+    course_title: data.course_title?.trim() || '',
+    title: data.title?.trim() || '',
+    description: data.description?.trim() || '',
+    assigned_date: data.assigned_date || '2026-09-04',
+    deadline: data.deadline || '',
+    submission_platform: data.submission_platform || 'Google Classroom',
+    status: data.status || 'pending',
+    marks: Number(data.marks) || 10
+  };
+  db.assignments.push(record);
+  flushToDisk();
+  return record;
 }
 
 export function updateAssignment(id, updates) {
-  const d = getDb();
-  const existing = getAssignmentById(id);
-  if (!existing) return null;
-
-  const merged = { ...existing, ...updates };
-  d.prepare(`
-    UPDATE assignments
-    SET course = ?, course_title = ?, title = ?, description = ?, assigned_date = ?, deadline = ?, submission_platform = ?, status = ?, marks = ?
-    WHERE id = ?
-  `).run(
-    merged.course,
-    merged.course_title,
-    merged.title,
-    merged.description,
-    merged.assigned_date,
-    merged.deadline,
-    merged.submission_platform,
-    merged.status,
-    Number(merged.marks),
-    id
-  );
-
-  const updated = getAssignmentById(id);
-  syncUpdateAssignment(updated);
-  return updated;
+  const index = db.assignments.findIndex(a => a.id === id);
+  if (index === -1) return null;
+  db.assignments[index] = { ...db.assignments[index], ...updates };
+  flushToDisk();
+  return db.assignments[index];
 }
 
 export function deleteAssignment(id) {
-  const d = getDb();
-  const res = d.prepare('DELETE FROM assignments WHERE id = ?').run(id);
-  if (res.changes > 0) {
-    syncDeleteAssignment(id);
-  }
-  return res.changes > 0;
+  const index = db.assignments.findIndex(a => a.id === id);
+  if (index === -1) return false;
+  db.assignments.splice(index, 1);
+  flushToDisk();
+  return true;
 }
 
 // ==================== STATS ====================
 export function getStats() {
-  const d = getDb();
   return {
     counts: {
-      schedules: d.prepare('SELECT COUNT(*) as count FROM schedules').get().count,
-      rooms: d.prepare('SELECT COUNT(*) as count FROM rooms').get().count,
-      events: d.prepare('SELECT COUNT(*) as count FROM events').get().count,
-      announcements: d.prepare('SELECT COUNT(*) as count FROM announcements').get().count,
-      assignments: d.prepare('SELECT COUNT(*) as count FROM assignments').get().count
+      schedules: (db.schedules || []).length,
+      rooms: (db.rooms || []).length,
+      events: (db.events || []).length,
+      announcements: (db.announcements || []).length,
+      assignments: (db.assignments || []).length
     },
-    highPriorityAnnouncements: d.prepare("SELECT COUNT(*) as count FROM announcements WHERE LOWER(priority) = 'high'").get().count,
-    pendingAssignments: d.prepare("SELECT COUNT(*) as count FROM assignments WHERE LOWER(status) = 'pending'").get().count,
-    upcomingEvents: d.prepare("SELECT COUNT(*) as count FROM events WHERE LOWER(status) = 'upcoming'").get().count,
-    availableRooms: d.prepare("SELECT COUNT(*) as count FROM rooms WHERE LOWER(status) = 'available'").get().count
+    highPriorityAnnouncements: (db.announcements || []).filter(a => a.priority === 'high').length,
+    pendingAssignments: (db.assignments || []).filter(a => a.status === 'pending').length,
+    upcomingEvents: (db.events || []).filter(e => e.status === 'upcoming').length,
+    availableRooms: (db.rooms || []).filter(r => r.status === 'available').length
   };
 }
