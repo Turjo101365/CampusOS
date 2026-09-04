@@ -1,4 +1,6 @@
-const API_BASE = '/api';
+const API_BASE = (typeof window !== 'undefined' && window.location.hostname === 'localhost' && window.location.port === '5173')
+  ? 'http://localhost:3000/api'
+  : '/api';
 
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
@@ -11,7 +13,15 @@ async function request(endpoint, options = {}) {
   };
 
   const response = await fetch(url, config);
-  const data = await response.json();
+  const contentType = response.headers.get('content-type') || '';
+  
+  let data;
+  if (contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    const text = await response.text();
+    throw new Error(`Server returned non-JSON response (${response.status}): ${text.slice(0, 80)}`);
+  }
 
   if (!response.ok || data.success === false) {
     const errorMsg = data.error || data.message || `Request failed with status ${response.status}`;
