@@ -117,6 +117,45 @@ describe("operational action services", () => {
     });
   });
 
+  describe("room booking cancellation", () => {
+    it("cancels the owner's own booking and returns a confirmation receipt", async () => {
+      vi.spyOn(authorizationService, "requireActor").mockResolvedValue(student as never);
+      vi.spyOn(roomsModel, "findBookingById").mockResolvedValue({
+        id: "booking-1", roomId: "room-1",
+        startsAt: new Date("2099-09-07T14:00:00.000Z"), endsAt: new Date("2099-09-07T15:00:00.000Z"),
+        room: { number: "7A01" }, user: { externalId: student.externalId }
+      } as never);
+      const deleteSpy = vi.spyOn(roomsModel, "deleteBooking").mockResolvedValue(undefined as never);
+
+      const result = await roomsService.cancelBooking("room-1", "booking-1", student.externalId);
+
+      expect(result).toMatchObject({ action: "ROOM_BOOKING_CANCEL", status: "CONFIRMED" });
+      expect(deleteSpy).toHaveBeenCalledWith("booking-1");
+    });
+
+    it("rejects cancellation when the booking does not belong to the given room", async () => {
+      vi.spyOn(authorizationService, "requireActor").mockResolvedValue(student as never);
+      vi.spyOn(roomsModel, "findBookingById").mockResolvedValue({
+        id: "booking-1", roomId: "room-other", room: { number: "7A02" }, user: { externalId: student.externalId }
+      } as never);
+
+      await expect(
+        roomsService.cancelBooking("room-1", "booking-1", student.externalId)
+      ).rejects.toMatchObject({ code: "BOOKING_NOT_FOUND", statusCode: 404 });
+    });
+
+    it("rejects cancellation when a different user attempts to cancel someone else's booking", async () => {
+      vi.spyOn(authorizationService, "requireActor").mockResolvedValue(student as never);
+      vi.spyOn(roomsModel, "findBookingById").mockResolvedValue({
+        id: "booking-1", roomId: "room-1", room: { number: "7A01" }, user: { externalId: "other-user-002" }
+      } as never);
+
+      await expect(
+        roomsService.cancelBooking("room-1", "booking-1", student.externalId)
+      ).rejects.toMatchObject({ code: "TARGET_USER_FORBIDDEN", statusCode: 403 });
+    });
+  });
+
   describe("event registration", () => {
     it("registers the current user for a conflict-free event", async () => {
       vi.spyOn(authorizationService, "requireActor").mockResolvedValue(student as never);
@@ -192,6 +231,39 @@ describe("operational action services", () => {
       await expect(eventsService.register("event-1", student.externalId)).rejects.toMatchObject({
         code: "EVENT_SCHEDULE_CONFLICT", statusCode: 409
       });
+    });
+  });
+
+  describe("event registration cancellation", () => {
+    it("cancels the owner's own registration and returns a confirmation receipt", async () => {
+      vi.spyOn(authorizationService, "requireActor").mockResolvedValue(student as never);
+      vi.spyOn(authorizationService, "requireSelfOrAdmin").mockReturnValue(undefined);
+      vi.spyOn(eventsService, "getById").mockResolvedValue({ id: "event-1", name: "AI Summit" } as never);
+      vi.spyOn(eventsModel, "findRegistration").mockResolvedValue({ id: "registration-1" } as never);
+      const deleteSpy = vi.spyOn(eventsModel, "deleteRegistration").mockResolvedValue(undefined as never);
+
+      const result = await eventsService.cancelRegistration("event-1", student.externalId);
+
+      expect(result).toMatchObject({ action: "EVENT_REGISTRATION_CANCEL", status: "CONFIRMED" });
+      expect(deleteSpy).toHaveBeenCalledWith("registration-1");
+    });
+
+    it("rejects cancellation when there is no registration to cancel", async () => {
+      vi.spyOn(authorizationService, "requireActor").mockResolvedValue(student as never);
+      vi.spyOn(authorizationService, "requireSelfOrAdmin").mockReturnValue(undefined);
+      vi.spyOn(eventsService, "getById").mockResolvedValue({ id: "event-1", name: "AI Summit" } as never);
+      vi.spyOn(eventsModel, "findRegistration").mockResolvedValue(null);
+
+      await expect(
+        eventsService.cancelRegistration("event-1", student.externalId)
+      ).rejects.toMatchObject({ code: "REGISTRATION_NOT_FOUND", statusCode: 404 });
+    });
+
+    it("rejects cancellation when non-admin attempts to cancel another user's registration", async () => {
+      vi.spyOn(authorizationService, "requireActor").mockResolvedValue(student as never);
+      await expect(
+        eventsService.cancelRegistration("event-1", student.externalId, "other-user-002")
+      ).rejects.toMatchObject({ code: "TARGET_USER_FORBIDDEN", statusCode: 403 });
     });
   });
 
@@ -328,6 +400,49 @@ describe("operational action services", () => {
         }
       });
       expect(registerSpy).not.toHaveBeenCalled();
+    });
+
+    it("proposeRoomBookingCancellation returns ACTION_CONFIRMATION_REQUIRED and does not write to database", async () => {
+      const deleteSpy = vi.spyOn(roomsModel, "deleteBooking");
+
+      const result = await executeCampusTool(
+        "proposeRoomBookingCancellation",
+        {
+          roomId: "room-101", bookingId: "booking-9", roomNumber: "7A01",
+          date: "2099-09-07", startTime: "14:00", endTime: "15:00"
+        },
+        student.externalId
+      );
+
+      expect(result).toMatchObject({
+        kind: "ACTION_CONFIRMATION_REQUIRED",
+        pendingAction: {
+          type: "ROOM_BOOKING_CANCEL",
+          summary: expect.stringContaining("Cancel your booking for room 7A01"),
+          payload: { roomId: "room-101", bookingId: "booking-9" }
+        }
+      });
+      expect(deleteSpy).not.toHaveBeenCalled();
+    });
+
+    it("proposeEventRegistrationCancellation returns ACTION_CONFIRMATION_REQUIRED and does not cancel in database", async () => {
+      const deleteSpy = vi.spyOn(eventsModel, "deleteRegistration");
+
+      const result = await executeCampusTool(
+        "proposeEventRegistrationCancellation",
+        { eventId: "event-404", eventName: "Robotics Workshop" },
+        student.externalId
+      );
+
+      expect(result).toMatchObject({
+        kind: "ACTION_CONFIRMATION_REQUIRED",
+        pendingAction: {
+          type: "EVENT_REGISTRATION_CANCEL",
+          summary: "Cancel your registration for Robotics Workshop?",
+          payload: { eventId: "event-404", eventName: "Robotics Workshop" }
+        }
+      });
+      expect(deleteSpy).not.toHaveBeenCalled();
     });
 
     it("proposeAssignmentStatusUpdate returns ACTION_CONFIRMATION_REQUIRED and does not update database", async () => {

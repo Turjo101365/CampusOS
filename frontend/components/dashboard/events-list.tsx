@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, CheckCircle2, MapPin, Pencil, Plus, Trash2, UserCheck, Users } from "lucide-react";
+import { Calendar, CheckCircle2, MapPin, Pencil, Plus, Trash2, UserCheck, UserMinus, Users } from "lucide-react";
 import { useState } from "react";
 import { api, ApiClientError } from "../../services/api";
 import type { CampusEvent } from "../../types/api";
@@ -19,6 +19,7 @@ export function EventsList({ events, onMutated }: { events: CampusEvent[]; onMut
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [registeringId, setRegisteringId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   async function handleRegister(event: CampusEvent): Promise<void> {
@@ -36,6 +37,24 @@ export function EventsList({ events, onMutated }: { events: CampusEvent[]; onMut
       });
     } finally {
       setRegisteringId(null);
+    }
+  }
+
+  async function handleCancelRegistration(event: CampusEvent): Promise<void> {
+    setCancellingId(event.id);
+    setFeedback(null);
+    try {
+      const receipt = await api.cancelEventRegistration(event.id);
+      setFeedback({ type: "success", message: receipt.message });
+      onMutated();
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message: error instanceof ApiClientError ? error.message : "Could not cancel this registration."
+      });
+    } finally {
+      setCancellingId(null);
     }
   }
 
@@ -99,9 +118,21 @@ export function EventsList({ events, onMutated }: { events: CampusEvent[]; onMut
                 <div className="mt-4 flex items-center justify-between border-t pt-3">
                   <div>
                     {isRegistered ? (
-                      <Badge className="bg-emerald-50 text-emerald-700">
-                        <CheckCircle2 className="mr-1 size-3.5" /> Registered
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-emerald-50 text-emerald-700">
+                          <CheckCircle2 className="mr-1 size-3.5" /> Registered
+                        </Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleCancelRegistration(event)}
+                          disabled={cancellingId !== null}
+                        >
+                          <UserMinus className="size-3.5" />
+                          {cancellingId === event.id ? "Cancelling…" : "Cancel"}
+                        </Button>
+                      </div>
                     ) : isUpcoming && !isFull ? (
                       <Button
                         type="button"

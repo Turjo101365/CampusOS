@@ -23,5 +23,14 @@ export const eventsController = {
       "Event registration confirmed",
       201
     );
+  },
+  async cancelRegistration(request: Request, response: Response) {
+    const actorUserId = (request as AuthenticatedRequest).auth.userId;
+    const targetUserId = (request.query.userId as string | undefined) ?? actorUserId;
+    return sendSuccess(
+      response,
+      await eventsService.cancelRegistration(request.params.id as string, actorUserId, targetUserId),
+      "Event registration cancelled"
+    );
   }
 };

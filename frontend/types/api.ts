@@ -105,12 +105,26 @@ export type PendingAction =
       summary: string;
       payload: { roomId: string; roomNumber: string; date: string; startTime: string; endTime: string; purpose: string };
     }
+  | {
+      type: "ROOM_BOOKING_CANCEL";
+      summary: string;
+      payload: { roomId: string; bookingId: string; roomNumber: string; date: string; startTime: string; endTime: string };
+    }
   | { type: "EVENT_REGISTRATION"; summary: string; payload: { eventId: string; eventName: string } }
+  | { type: "EVENT_REGISTRATION_CANCEL"; summary: string; payload: { eventId: string; eventName: string } }
   | {
       type: "ASSIGNMENT_STATUS_UPDATE";
       summary: string;
       payload: { assignmentId: string; assignmentTitle: string; status: "PENDING" | "IN_PROGRESS" | "SUBMITTED" };
     };
+
+export interface RoomBookingSummary {
+  id: string;
+  purpose: string;
+  startsAt: string;
+  endsAt: string;
+  room: Pick<Room, "id" | "number">;
+}
 
 export interface ActionConfirmation<T = unknown> {
   action: PendingAction["type"];

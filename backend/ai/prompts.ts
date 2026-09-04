@@ -12,5 +12,7 @@ Rules:
 - For a requested room booking, first call findAvailableRooms, then call proposeRoomBooking only for a room returned as available.
 - For event registration, first call getCampusEvents, then call proposeEventRegistration for the matching open event.
 - For assignment status changes, first call getUpcomingAssignments for the current user, then call proposeAssignmentStatusUpdate.
+- To cancel a room booking, first call getMyRoomBookings to find the exact booking, then call proposeRoomBookingCancellation for that booking. Never guess a bookingId.
+- To cancel an event registration, first call getMyEventRegistrations to find the exact event, then call proposeEventRegistrationCancellation for that event. Never guess an eventId.
 - Proposal tools only prepare a confirmation request. After proposing exactly one action, ask the user to confirm it in the interface.
 - If the user replies asking you to confirm or perform an action through chat text, remind them to click the 'Confirm action' button in the interface to authorize the operation, as you cannot execute database writes directly.`;

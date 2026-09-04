@@ -85,6 +85,55 @@ describe("Operational REST API Endpoints", () => {
     });
   });
 
+  describe("DELETE /api/v1/rooms/:id/bookings/:bookingId", () => {
+    it("returns 200 and confirmation receipt on valid booking cancellation", async () => {
+      vi.spyOn(roomsService, "cancelBooking").mockResolvedValue(
+        createActionConfirmation("ROOM_BOOKING_CANCEL", "Your booking for 7A01 on 2099-09-07 from 14:00 to 15:00 has been cancelled.", {
+          id: "booking-101",
+          roomId: "room-1"
+        } as never)
+      );
+
+      const response = await request(app)
+        .delete("/api/v1/rooms/room-1/bookings/booking-101")
+        .set("x-user-id", "student-001")
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        message: "Room booking cancelled",
+        data: { action: "ROOM_BOOKING_CANCEL", status: "CONFIRMED", result: { id: "booking-101" } }
+      });
+      expect(roomsService.cancelBooking).toHaveBeenCalledWith("room-1", "booking-101", "student-001");
+    });
+
+    it("returns 404 when the booking does not exist", async () => {
+      vi.spyOn(roomsService, "cancelBooking").mockRejectedValue(
+        new AppError("Booking not found", 404, "BOOKING_NOT_FOUND")
+      );
+
+      const response = await request(app)
+        .delete("/api/v1/rooms/room-1/bookings/missing")
+        .set("x-user-id", "student-001")
+        .expect(404);
+
+      expect(response.body).toMatchObject({ success: false, error: { code: "BOOKING_NOT_FOUND" } });
+    });
+
+    it("returns 403 when a different user attempts to cancel someone else's booking", async () => {
+      vi.spyOn(roomsService, "cancelBooking").mockRejectedValue(
+        new AppError("You cannot perform this action for another user", 403, "TARGET_USER_FORBIDDEN")
+      );
+
+      const response = await request(app)
+        .delete("/api/v1/rooms/room-1/bookings/booking-101")
+        .set("x-user-id", "student-002")
+        .expect(403);
+
+      expect(response.body).toMatchObject({ success: false, error: { code: "TARGET_USER_FORBIDDEN" } });
+    });
+  });
+
   describe("POST /api/v1/events/:id/registrations", () => {
     it("returns 201 and confirmation receipt on event registration", async () => {
       vi.spyOn(eventsService, "register").mockResolvedValue(
@@ -143,6 +192,42 @@ describe("Operational REST API Endpoints", () => {
         success: false,
         error: { code: "TARGET_USER_FORBIDDEN" }
       });
+    });
+  });
+
+  describe("DELETE /api/v1/events/:id/registrations", () => {
+    it("returns 200 and confirmation receipt on valid registration cancellation", async () => {
+      vi.spyOn(eventsService, "cancelRegistration").mockResolvedValue(
+        createActionConfirmation("EVENT_REGISTRATION_CANCEL", "Your registration for Tech Talk has been cancelled.", {
+          id: "reg-1",
+          eventId: "event-1"
+        } as never)
+      );
+
+      const response = await request(app)
+        .delete("/api/v1/events/event-1/registrations")
+        .set("x-user-id", "student-001")
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        message: "Event registration cancelled",
+        data: { action: "EVENT_REGISTRATION_CANCEL", status: "CONFIRMED" }
+      });
+      expect(eventsService.cancelRegistration).toHaveBeenCalledWith("event-1", "student-001", "student-001");
+    });
+
+    it("returns 404 when there is no registration to cancel", async () => {
+      vi.spyOn(eventsService, "cancelRegistration").mockRejectedValue(
+        new AppError("Registration not found", 404, "REGISTRATION_NOT_FOUND")
+      );
+
+      const response = await request(app)
+        .delete("/api/v1/events/event-1/registrations")
+        .set("x-user-id", "student-001")
+        .expect(404);
+
+      expect(response.body).toMatchObject({ success: false, error: { code: "REGISTRATION_NOT_FOUND" } });
     });
   });
 

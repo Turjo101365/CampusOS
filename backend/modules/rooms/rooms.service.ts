@@ -1,6 +1,6 @@
 import { AppError } from "../../utils/AppError.js";
 import { createActionConfirmation } from "../../utils/actionConfirmation.js";
-import { combineDateAndTime, dayOfWeekForDate } from "../../utils/dateTime.js";
+import { combineDateAndTime, dayOfWeekForDate, timeForSchedule } from "../../utils/dateTime.js";
 import { eventsModel } from "../events/events.model.js";
 import { scheduleModel } from "../schedule/schedule.model.js";
 import { authorizationService } from "../users/authorization.service.js";
@@ -52,6 +52,22 @@ export const roomsService = {
     return createActionConfirmation(
       "ROOM_BOOKING",
       `${room.number} is booked for ${input.date} from ${input.startTime} to ${input.endTime}.`,
+      booking
+    );
+  },
+  myBookings(externalUserId: string) {
+    return roomsModel.findUserBookings(externalUserId);
+  },
+  async cancelBooking(roomId: string, bookingId: string, externalUserId: string) {
+    const actor = await authorizationService.requireActor(externalUserId, "ROOM_BOOKING_CANCEL");
+    const booking = await roomsModel.findBookingById(bookingId);
+    if (!booking || booking.roomId !== roomId) throw new AppError("Booking not found", 404, "BOOKING_NOT_FOUND");
+    if (!booking.user) throw new AppError("This booking has no owner on record", 409, "BOOKING_OWNERLESS");
+    authorizationService.requireSelfOrAdmin(actor, booking.user.externalId);
+    await roomsModel.deleteBooking(bookingId);
+    return createActionConfirmation(
+      "ROOM_BOOKING_CANCEL",
+      `Your booking for ${booking.room.number} on ${booking.startsAt.toISOString().slice(0, 10)} from ${timeForSchedule(booking.startsAt)} to ${timeForSchedule(booking.endsAt)} has been cancelled.`,
       booking
     );
   }
