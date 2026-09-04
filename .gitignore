@@ -28,3 +28,11 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Runtime databases
+server/data/
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
