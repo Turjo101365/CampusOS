@@ -1,38 +1,26 @@
 # Dependencies
 node_modules/
-__pycache__/
-*.pyc
-.venv/
-venv/
-env/
 
-# Environment
-.env
-*.env.local
-
-# Build outputs
-dist/
-build/
+# Build output
 .next/
-out/
+dist/
+coverage/
+*.tsbuildinfo
 
-# Editors
-.vscode/
-.idea/
-*.swp
+# Local environment and secrets
+.env
+.env.*
+!.env.example
 
-# OS
+# Application logs
+*.log
+
+# Editors and OS
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
 
-# Logs
-*.log
-npm-debug.log*
-
-# Runtime databases
-server/data/
-*.sqlite
-*.sqlite3
-*.sqlite-journal
-*.sqlite-wal
-*.sqlite-shm
+# Test artifacts
+playwright-report/
+test-results/
