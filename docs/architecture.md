@@ -10,7 +10,7 @@ CampusOS uses a modular monorepo so hackathon iteration remains fast without cou
 flowchart LR
   Browser[Next.js client] -->|HTTPS /api/v1| API[Express API]
   API --> Modules[Domain services]
-  Agent[OpenAI Responses agent] --> Tools[Allowlisted functions]
+  Agent[Gemini chat-completions agent] --> Tools[Allowlisted functions]
   Tools --> Modules
   Agent --> Proposal[Side-effect-free action proposal]
   Proposal --> Confirm[Explicit user confirmation]
@@ -62,6 +62,6 @@ The local environment runs MySQL in Docker while Node processes run on the host.
 - Operational mutations resolve the authenticated actor, enforce permissions, and recheck conflicts inside domain services.
 - AI action proposals are side-effect-free; only explicit browser confirmation calls a REST mutation.
 - Multi-record writes use Prisma transactions.
-- OpenAI receives only service results required for the current question.
+- Gemini receives only service results required for the current question.
 - AI session persistence is accessed through an internal service/model boundary and is bounded to 12 messages.
 - Environment secrets are loaded server-side and excluded from Git.

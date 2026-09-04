@@ -1,6 +1,6 @@
 # CampusOS
 
-CampusOS is an AI-powered campus operations platform that unifies schedules, rooms, assignments, events, and announcements behind a typed API and a confirmation-gated OpenAI assistant.
+CampusOS is an AI-powered campus operations platform that unifies schedules, rooms, assignments, events, and announcements behind a typed API and a confirmation-gated Gemini-powered assistant.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ Backend feature dependencies point inward:
 ```text
 HTTP route → validation → controller → service → model/repository → Prisma → MySQL
                                       ↑
-OpenAI agent → function tool ─────────┘
+Gemini agent → function tool ─────────┘
 ```
 
 The AI layer cannot import the database client. Five read tools call the same query services used by the REST API. Three proposal-only tools can prepare a room booking, event registration, or assignment status change, but only an explicit user confirmation invokes the corresponding REST mutation.
@@ -40,7 +40,7 @@ Each mutation resolves the authenticated actor, enforces role and ownership rule
 - Node.js 20+
 - npm 10+
 - Docker Desktop or another Docker Compose runtime
-- An OpenAI API key for the AI assistant (the rest of the application works without one)
+- A Gemini API key for the AI assistant (the rest of the application works without one)
 
 ## Local setup
 
@@ -93,8 +93,8 @@ Open the dashboard at [http://localhost:3000](http://localhost:3000). The API li
 | `BACKEND_PORT` | Express listen port | `4000` |
 | `FRONTEND_URL` | Allowed browser origin | `http://localhost:3000` |
 | `NEXT_PUBLIC_API_URL` | Browser-visible API base URL | `http://localhost:4000/api/v1` |
-| `OPENAI_API_KEY` | Enables the AI assistant | empty |
-| `OPENAI_MODEL` | Responses API model ID | `gpt-5-mini` |
+| `GEMINI_API_KEY` | Enables the AI assistant | empty |
+| `GEMINI_MODEL` | Gemini model ID (via the OpenAI-compatible Chat Completions endpoint) | `gemini-2.0-flash` |
 | `DEV_USER_ID` | Local request identity fallback | `20-40532` |
 
 Never commit `.env` or API keys. Production deployments should replace the development identity header with a verified identity provider.

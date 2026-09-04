@@ -11,8 +11,8 @@ const environmentSchema = z.object({
   BACKEND_PORT: z.coerce.number().int().positive().default(4000),
   FRONTEND_URL: z.string().url().default("http://localhost:3000"),
   DATABASE_URL: z.string().min(1).default("mysql://campusos:campusos_dev_password@localhost:3306/campusos"),
-  OPENAI_API_KEY: z.string().optional(),
-  OPENAI_MODEL: z.string().min(1).default("gpt-5-mini"),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().min(1).default("gemini-3.6-flash"),
   DEV_USER_ID: z.string().min(1).default("user-student-001")
 });
 

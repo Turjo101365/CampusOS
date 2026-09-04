@@ -60,8 +60,8 @@ export function DashboardHero({ data, userName }: { data: DashboardData; userNam
       <section aria-label="Campus summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {widgets.map((widget) => (
           <div key={widget.label} className="glass-surface flex flex-col gap-3 rounded-xl p-5 transition-standard hover:-translate-y-0.5 hover:shadow-elevated">
-            <span className="gradient-primary flex size-9 w-fit items-center justify-center rounded-lg text-primary-foreground shadow-soft">
-              <widget.icon className="size-4" aria-hidden="true" />
+            <span className="gradient-primary flex size-10 shrink-0 items-center justify-center rounded-xl text-primary-foreground shadow-soft">
+              <widget.icon className="size-5 shrink-0" aria-hidden="true" />
             </span>
             <div className="min-w-0">
               <p className={widget.isTitle ? "truncate text-base font-semibold tracking-tight" : "text-2xl font-semibold tabular-nums tracking-tight"}>{widget.value}</p>
