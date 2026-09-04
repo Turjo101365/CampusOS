@@ -25,7 +25,7 @@ Tools are read-only by design. Adding actions such as booking a room requires a 
 ## Function-calling lifecycle
 
 1. The API validates the user message and resolves the authenticated campus user.
-2. The agent sends the prompt, bounded session messages, and strict JSON tool schemas to the OpenAI Responses API.
+2. The agent sends the prompt, bounded session messages, and JSON tool schemas to Gemini's OpenAI-compatible Chat Completions endpoint.
 3. Each returned `function_call` is parsed and independently validated with Zod.
 4. The executor invokes a domain service and serializes its result as `function_call_output` with the original `call_id`.
 5. The loop continues until the model returns text or reaches the five-round guardrail.
@@ -40,7 +40,7 @@ This follows the official OpenAI function-calling pattern of appending model out
 - The system prompt forbids invented campus facts.
 - Tool errors return stable codes to the model without stack traces.
 - Tool rounds are capped to prevent runaway loops.
-- `OPENAI_API_KEY` is server-only and the endpoint returns `503` when it is absent.
+- `GEMINI_API_KEY` is server-only and the endpoint returns `503` when it is absent.
 - Conversation memory is user/session scoped, bounded to 12 messages, and can be explicitly cleared.
 
 For production, add a retention job and application-level encryption for chat content, then document the retention policy.

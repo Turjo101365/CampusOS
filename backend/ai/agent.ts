@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import { environment } from "../config/environment.js";
 import { AppError } from "../utils/AppError.js";
 import { isActionProposalResult, type PendingAction } from "./actionProposals.js";
@@ -7,6 +8,14 @@ import { CAMPUS_ASSISTANT_PROMPT } from "./prompts.js";
 import { campusTools, executeCampusTool } from "./tools.js";
 
 const MAX_TOOL_ROUNDS = 5;
+
+/** Gemini's OpenAI-compatible endpoint speaks the standard Chat Completions API. */
+const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+
+const chatCompletionTools: ChatCompletionTool[] = campusTools.map((tool) => ({
+  type: "function",
+  function: { name: tool.name, description: tool.description, parameters: tool.parameters as Record<string, unknown> }
+}));
 
 export interface AgentReply {
   message: string;
@@ -26,11 +35,11 @@ export async function runCampusAgent(
   currentUserId: string,
   onToolEvent?: (event: ToolEvent) => void
 ): Promise<AgentReply> {
-  if (!environment.OPENAI_API_KEY) {
-    throw new AppError("The AI assistant is not configured. Add OPENAI_API_KEY to .env.", 503, "AI_NOT_CONFIGURED");
+  if (!environment.GEMINI_API_KEY) {
+    throw new AppError("The AI assistant is not configured. Add GEMINI_API_KEY to .env.", 503, "AI_NOT_CONFIGURED");
   }
 
-  const client = new OpenAI({ apiKey: environment.OPENAI_API_KEY });
+  const client = new OpenAI({ apiKey: environment.GEMINI_API_KEY, baseURL: GEMINI_BASE_URL });
 
   // 1. session_id is already received as a parameter.
   // 2. Load previous messages for this session from MySQL.
@@ -38,32 +47,35 @@ export async function runCampusAgent(
   // 3. Add the new user message — persisted immediately and included in this call's input.
   await chatMemoryService.saveMessage(sessionId, currentUserId, "user", message);
 
-  const input: Array<Record<string, unknown>> = [
-    ...history.map((entry) => ({ role: entry.role, content: entry.content })),
+  const messages: ChatCompletionMessageParam[] = [
+    { role: "system", content: CAMPUS_ASSISTANT_PROMPT },
+    ...history.map((entry) => ({ role: entry.role, content: entry.content }) as ChatCompletionMessageParam),
     { role: "user", content: message }
   ];
   const toolsUsed: string[] = [];
   let pendingAction: PendingAction | undefined;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const response = await client.responses.create({
-      model: environment.OPENAI_MODEL,
-      instructions: CAMPUS_ASSISTANT_PROMPT,
-      tools: campusTools as never,
-      input: input as never,
-      store: false,
-      parallel_tool_calls: false
+    const response = await client.chat.completions.create({
+      model: environment.GEMINI_MODEL,
+      messages,
+      tools: chatCompletionTools
     });
 
-    input.push(...(response.output as unknown as Array<Record<string, unknown>>));
-    const toolCalls = response.output.filter((item) => item.type === "function_call");
+    const choice = response.choices[0];
+    const assistantMessage = choice?.message;
+    if (!assistantMessage) {
+      throw new AppError("The AI assistant returned an empty response", 502, "AI_EMPTY_RESPONSE");
+    }
+    messages.push(assistantMessage);
 
+    const toolCalls = assistantMessage.tool_calls ?? [];
     if (toolCalls.length === 0) {
-      const assistantMessage = response.output_text.trim() || "I could not produce a response. Please try again.";
+      const replyText = assistantMessage.content?.trim() || "I could not produce a response. Please try again.";
       // 5. Save the assistant's final response once tool execution is complete.
-      await chatMemoryService.saveMessage(sessionId, currentUserId, "assistant", assistantMessage);
+      await chatMemoryService.saveMessage(sessionId, currentUserId, "assistant", replyText);
       return {
-        message: assistantMessage,
+        message: replyText,
         toolsUsed: [...new Set(toolsUsed)],
         sessionId,
         ...(pendingAction ? { pendingAction } : {})
@@ -72,11 +84,12 @@ export async function runCampusAgent(
 
     // 4. Execute tools — unchanged from the existing AI -> Tools -> Services -> Database chain.
     for (const toolCall of toolCalls) {
-      toolsUsed.push(toolCall.name);
-      onToolEvent?.({ type: "start", tool: toolCall.name });
+      const toolName = toolCall.function.name;
+      toolsUsed.push(toolName);
+      onToolEvent?.({ type: "start", tool: toolName });
       let output: unknown;
       try {
-        output = await executeCampusTool(toolCall.name, JSON.parse(toolCall.arguments), currentUserId);
+        output = await executeCampusTool(toolName, JSON.parse(toolCall.function.arguments), currentUserId);
         if (isActionProposalResult(output)) pendingAction = output.pendingAction;
       } catch (error) {
         output = {
@@ -84,12 +97,8 @@ export async function runCampusAgent(
           code: error instanceof AppError ? error.code : "TOOL_EXECUTION_ERROR"
         };
       }
-      onToolEvent?.({ type: "end", tool: toolCall.name });
-      input.push({
-        type: "function_call_output",
-        call_id: toolCall.call_id,
-        output: JSON.stringify(output)
-      });
+      onToolEvent?.({ type: "end", tool: toolName });
+      messages.push({ role: "tool", tool_call_id: toolCall.id, content: JSON.stringify(output) });
     }
   }
 
