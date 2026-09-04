@@ -24,3 +24,6 @@ Thumbs.db
 # Test artifacts
 playwright-report/
 test-results/
+
+# Runtime data
+server/data/
