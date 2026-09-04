@@ -68,6 +68,16 @@ export const eventsModel = {
   findRegistration(eventId: string, externalUserId: string) {
     return database.eventRegistration.findFirst({ where: { eventId, user: { externalId: externalUserId } } });
   },
+  findUserRegisteredEvents(externalUserId: string) {
+    return database.campusEvent.findMany({
+      where: { registrations: { some: { user: { externalId: externalUserId } } } },
+      include: eventInclude,
+      orderBy: { startsAt: "asc" }
+    });
+  },
+  deleteRegistration(registrationId: string) {
+    return database.eventRegistration.delete({ where: { id: registrationId } });
+  },
   findUserEventConflict(externalUserId: string, eventId: string | undefined, startsAt: Date, endsAt: Date) {
     return database.eventRegistration.findFirst({
       where: {

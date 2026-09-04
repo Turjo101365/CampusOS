@@ -15,8 +15,12 @@ const TOOL_LABELS: Record<string, string> = {
   getUpcomingAssignments: "Checking deadlines",
   getCampusEvents: "Checking campus events",
   getAnnouncements: "Checking announcements",
+  getMyRoomBookings: "Checking your room bookings",
+  getMyEventRegistrations: "Checking your event registrations",
   proposeRoomBooking: "Preparing room booking",
+  proposeRoomBookingCancellation: "Preparing booking cancellation",
   proposeEventRegistration: "Preparing event registration",
+  proposeEventRegistrationCancellation: "Preparing registration cancellation",
   proposeAssignmentStatusUpdate: "Preparing assignment update"
 };
 
@@ -33,6 +37,8 @@ function smartRecommendations(message: ChatMessage): string[] {
   if (tools.includes("getUpcomingAssignments")) return ["Mark the nearest one in progress", "What's my schedule tomorrow?"];
   if (tools.includes("getCampusEvents")) return ["Register me for that event", "Any announcements about it?"];
   if (tools.includes("getAnnouncements")) return ["Show only urgent announcements", "What's on my schedule today?"];
+  if (tools.includes("getMyRoomBookings")) return ["Cancel one of these bookings", "Find another available room"];
+  if (tools.includes("getMyEventRegistrations")) return ["Cancel one of these registrations", "What else is happening on campus?"];
   return [];
 }
 

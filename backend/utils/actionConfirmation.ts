@@ -1,5 +1,5 @@
 export interface ActionConfirmation<T> {
-  action: "ROOM_BOOKING" | "EVENT_REGISTRATION" | "ASSIGNMENT_STATUS_UPDATE";
+  action: "ROOM_BOOKING" | "ROOM_BOOKING_CANCEL" | "EVENT_REGISTRATION" | "EVENT_REGISTRATION_CANCEL" | "ASSIGNMENT_STATUS_UPDATE";
   status: "CONFIRMED";
   message: string;
   confirmedAt: string;

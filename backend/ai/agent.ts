@@ -17,6 +17,42 @@ const chatCompletionTools: ChatCompletionTool[] = campusTools.map((tool) => ({
   function: { name: tool.name, description: tool.description, parameters: tool.parameters as Record<string, unknown> }
 }));
 
+const RATE_LIMIT_RETRY_DELAYS_MS = [1500, 4000, 9000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Free-tier Gemini keys have low per-minute request limits, so a normal
+ * multi-round tool-calling turn can legitimately hit a transient 429.
+ * Retry with backoff before surfacing it as a real failure.
+ */
+async function createChatCompletion(
+  client: OpenAI,
+  params: Parameters<OpenAI["chat"]["completions"]["create"]>[0]
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  for (let attempt = 0; attempt <= RATE_LIMIT_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await client.chat.completions.create(params) as OpenAI.Chat.Completions.ChatCompletion;
+    } catch (error) {
+      const isRateLimited = error instanceof OpenAI.APIError && error.status === 429;
+      if (!isRateLimited || attempt === RATE_LIMIT_RETRY_DELAYS_MS.length) {
+        if (isRateLimited) {
+          throw new AppError(
+            "The AI assistant is temporarily rate-limited. Please wait a few seconds and try again.",
+            429,
+            "AI_RATE_LIMITED"
+          );
+        }
+        throw error;
+      }
+      await sleep(RATE_LIMIT_RETRY_DELAYS_MS[attempt] ?? 5000);
+    }
+  }
+  throw new AppError("The AI assistant is unavailable", 502, "AI_UNAVAILABLE");
+}
+
 export interface AgentReply {
   message: string;
   toolsUsed: string[];
@@ -56,7 +92,7 @@ export async function runCampusAgent(
   let pendingAction: PendingAction | undefined;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const response = await client.chat.completions.create({
+    const response = await createChatCompletion(client, {
       model: environment.GEMINI_MODEL,
       messages,
       tools: chatCompletionTools

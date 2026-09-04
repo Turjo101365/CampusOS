@@ -11,6 +11,7 @@ import { Button } from "../shared/ui/button";
 import { ConfirmDialog } from "../shared/ui/confirm-dialog";
 import { RoomForm } from "./room-form";
 import { RoomBookingModal } from "./room-booking-modal";
+import { MyRoomBookings } from "./my-bookings";
 
 type FormState = { mode: "create" } | { mode: "edit"; room: Room };
 
@@ -20,6 +21,7 @@ export function RoomsGrid({ rooms, onMutated }: { rooms: Room[]; onMutated: () =
   const [pendingDelete, setPendingDelete] = useState<Room | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [bookingsVersion, setBookingsVersion] = useState(0);
 
   async function handleDelete(): Promise<void> {
     if (!pendingDelete) return;
@@ -43,6 +45,8 @@ export function RoomsGrid({ rooms, onMutated }: { rooms: Room[]; onMutated: () =
           <Plus className="size-4" /> Add room
         </Button>
       </div>
+
+      <MyRoomBookings refreshKey={bookingsVersion} />
 
       {rooms.length === 0 ? (
         <EmptyState label="No rooms match this view" />
@@ -96,6 +100,7 @@ export function RoomsGrid({ rooms, onMutated }: { rooms: Room[]; onMutated: () =
           onClose={() => setBookingRoom(null)}
           onBooked={() => {
             setBookingRoom(null);
+            setBookingsVersion((version) => version + 1);
             onMutated();
           }}
         />

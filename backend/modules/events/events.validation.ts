@@ -26,6 +26,7 @@ export const eventUpdateBodySchema = eventFieldsSchema.partial().refine(
   { message: "startsAt must be before endsAt", path: ["endsAt"] }
 );
 export const eventRegistrationBodySchema = z.object({ userId: z.string().min(1).optional() });
+export const eventRegistrationCancelQuerySchema = z.object({ userId: z.string().min(1).optional() });
 
 export type EventInput = z.infer<typeof eventBodySchema>;
 export type EventUpdateInput = z.infer<typeof eventUpdateBodySchema>;

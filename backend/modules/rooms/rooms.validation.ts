@@ -4,6 +4,7 @@ const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:mm
 const roomTypeSchema = z.enum(["CLASSROOM", "LAB", "SEMINAR", "AUDITORIUM", "STUDY"]);
 
 export const roomParamsSchema = z.object({ id: z.string().min(1) });
+export const bookingParamsSchema = z.object({ id: z.string().min(1), bookingId: z.string().min(1) });
 export const roomListQuerySchema = z.object({
   type: roomTypeSchema.optional(),
   minCapacity: z.coerce.number().int().positive().optional(),

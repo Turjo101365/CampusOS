@@ -92,6 +92,30 @@ export const campusTools = [
   },
   {
     type: "function",
+    name: "getMyRoomBookings",
+    description: "Get the current user's upcoming room bookings, including the booking ID needed to cancel one.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "getMyEventRegistrations",
+    description: "Get the events the current user is registered for, including the event ID needed to cancel a registration.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
     name: "proposeRoomBooking",
     description: "Prepare a room-booking confirmation request. This does not book the room. Call findAvailableRooms first.",
     strict: true,
@@ -118,6 +142,40 @@ export const campusTools = [
       type: "object",
       properties: {
         eventId: { type: "string", description: "Exact event ID returned by getCampusEvents." },
+        eventName: { type: "string", description: "Human-readable event name." }
+      },
+      required: ["eventId", "eventName"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "proposeRoomBookingCancellation",
+    description: "Prepare a request to cancel one of the current user's own room bookings. This does not cancel it. Call getMyRoomBookings first.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        roomId: { type: "string", description: "Exact room ID returned by getMyRoomBookings." },
+        bookingId: { type: "string", description: "Exact booking ID returned by getMyRoomBookings." },
+        roomNumber: { type: "string", description: "Human-readable room number." },
+        date: { type: "string", description: "Date of the booking in YYYY-MM-DD format." },
+        startTime: { type: "string", description: "Start time in HH:mm 24-hour format." },
+        endTime: { type: "string", description: "End time in HH:mm 24-hour format." }
+      },
+      required: ["roomId", "bookingId", "roomNumber", "date", "startTime", "endTime"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "proposeEventRegistrationCancellation",
+    description: "Prepare a request to cancel the current user's own registration for an event. This does not cancel it. Call getMyEventRegistrations first.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        eventId: { type: "string", description: "Exact event ID returned by getMyEventRegistrations." },
         eventName: { type: "string", description: "Human-readable event name." }
       },
       required: ["eventId", "eventName"],
@@ -194,6 +252,10 @@ export async function executeCampusTool(name: string, rawArguments: unknown, cur
       const args = announcementArguments.parse(rawArguments);
       return announcementsService.list({ priority: args.priority ?? undefined, activeOnly: args.activeOnly });
     }
+    case "getMyRoomBookings":
+      return roomsService.myBookings(currentUserId);
+    case "getMyEventRegistrations":
+      return eventsService.myRegistrations(currentUserId);
     default:
       throw new AppError(`Unknown AI tool: ${name}`, 400, "UNKNOWN_AI_TOOL");
   }

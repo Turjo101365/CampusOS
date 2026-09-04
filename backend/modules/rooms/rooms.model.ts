@@ -79,6 +79,19 @@ export const roomsModel = {
   findBookingConflict(roomId: string, startsAt: Date, endsAt: Date) {
     return database.roomBooking.findFirst({ where: { roomId, startsAt: { lt: endsAt }, endsAt: { gt: startsAt } } });
   },
+  findUserBookings(externalUserId: string) {
+    return database.roomBooking.findMany({
+      where: { user: { externalId: externalUserId }, endsAt: { gte: new Date() } },
+      include: { room: true },
+      orderBy: { startsAt: "asc" }
+    });
+  },
+  findBookingById(bookingId: string) {
+    return database.roomBooking.findUnique({ where: { id: bookingId }, include: { room: true, user: true } });
+  },
+  deleteBooking(bookingId: string) {
+    return database.roomBooking.delete({ where: { id: bookingId } });
+  },
   findUserBookingConflict(externalUserId: string, startsAt: Date, endsAt: Date) {
     return database.roomBooking.findFirst({
       where: { user: { externalId: externalUserId }, startsAt: { lt: endsAt }, endsAt: { gt: startsAt } },

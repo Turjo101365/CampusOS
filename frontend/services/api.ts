@@ -11,6 +11,7 @@ import type {
   Notification,
   PendingAction,
   Room,
+  RoomBookingSummary,
   RoomInput,
   Schedule,
   ScheduleInput
@@ -148,11 +149,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input)
     }),
+  getMyRoomBookings: () => request<RoomBookingSummary[]>("/rooms/bookings/mine"),
+  cancelRoomBooking: (roomId: string, bookingId: string) =>
+    request<ActionConfirmation>(`/rooms/${roomId}/bookings/${bookingId}`, { method: "DELETE" }),
   registerEvent: (eventId: string, userId?: string) =>
     request<ActionConfirmation>(`/events/${eventId}/registrations`, {
       method: "POST",
       body: JSON.stringify(userId ? { userId } : {})
     }),
+  cancelEventRegistration: (eventId: string) =>
+    request<ActionConfirmation>(`/events/${eventId}/registrations`, { method: "DELETE" }),
   updateAssignmentStatus: (assignmentId: string, status: "PENDING" | "IN_PROGRESS" | "SUBMITTED") =>
     request<ActionConfirmation>(`/assignments/${assignmentId}/status`, {
       method: "PATCH",
@@ -163,8 +169,14 @@ export const api = {
       const { roomId, date, startTime, endTime, purpose } = action.payload;
       return api.bookRoom(roomId, { date, startTime, endTime, purpose });
     }
+    if (action.type === "ROOM_BOOKING_CANCEL") {
+      return api.cancelRoomBooking(action.payload.roomId, action.payload.bookingId);
+    }
     if (action.type === "EVENT_REGISTRATION") {
       return api.registerEvent(action.payload.eventId);
+    }
+    if (action.type === "EVENT_REGISTRATION_CANCEL") {
+      return api.cancelEventRegistration(action.payload.eventId);
     }
     return api.updateAssignmentStatus(action.payload.assignmentId, action.payload.status);
   }

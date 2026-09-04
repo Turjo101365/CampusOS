@@ -69,5 +69,21 @@ export const eventsService = {
       `Registration for ${event.name} is confirmed.`,
       registration
     );
+  },
+  myRegistrations(externalUserId: string) {
+    return eventsModel.findUserRegisteredEvents(externalUserId);
+  },
+  async cancelRegistration(eventId: string, actorExternalUserId: string, targetExternalUserId = actorExternalUserId) {
+    const actor = await authorizationService.requireActor(actorExternalUserId, "EVENT_REGISTRATION_CANCEL");
+    authorizationService.requireSelfOrAdmin(actor, targetExternalUserId);
+    const event = await this.getById(eventId);
+    const registration = await eventsModel.findRegistration(eventId, targetExternalUserId);
+    if (!registration) throw new AppError("Registration not found", 404, "REGISTRATION_NOT_FOUND");
+    await eventsModel.deleteRegistration(registration.id);
+    return createActionConfirmation(
+      "EVENT_REGISTRATION_CANCEL",
+      `Your registration for ${event.name} has been cancelled.`,
+      registration
+    );
   }
 };

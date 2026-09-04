@@ -2,11 +2,18 @@ import type { User, UserRole } from "@prisma/client";
 import { AppError } from "../../utils/AppError.js";
 import { usersService } from "./users.service.js";
 
-export type OperationalAction = "ROOM_BOOK" | "EVENT_REGISTER" | "ASSIGNMENT_STATUS_UPDATE";
+export type OperationalAction =
+  | "ROOM_BOOK"
+  | "ROOM_BOOKING_CANCEL"
+  | "EVENT_REGISTER"
+  | "EVENT_REGISTRATION_CANCEL"
+  | "ASSIGNMENT_STATUS_UPDATE";
 
 const allowedRoles: Record<OperationalAction, readonly UserRole[]> = {
   ROOM_BOOK: ["STUDENT", "FACULTY", "ADMIN"],
+  ROOM_BOOKING_CANCEL: ["STUDENT", "FACULTY", "ADMIN"],
   EVENT_REGISTER: ["STUDENT", "FACULTY", "ADMIN"],
+  EVENT_REGISTRATION_CANCEL: ["STUDENT", "FACULTY", "ADMIN"],
   ASSIGNMENT_STATUS_UPDATE: ["STUDENT"]
 };
 
