@@ -5,6 +5,7 @@ import { eventsService } from "../modules/events/events.service.js";
 import { roomsService } from "../modules/rooms/rooms.service.js";
 import { scheduleService } from "../modules/schedule/schedule.service.js";
 import { AppError } from "../utils/AppError.js";
+import { createActionProposal } from "./actionProposals.js";
 
 export const campusTools = [
   {
@@ -88,6 +89,56 @@ export const campusTools = [
       required: ["priority", "activeOnly"],
       additionalProperties: false
     }
+  },
+  {
+    type: "function",
+    name: "proposeRoomBooking",
+    description: "Prepare a room-booking confirmation request. This does not book the room. Call findAvailableRooms first.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        roomId: { type: "string", description: "Exact room ID returned by findAvailableRooms." },
+        roomNumber: { type: "string", description: "Human-readable room number." },
+        date: { type: "string", description: "Date in YYYY-MM-DD format." },
+        startTime: { type: "string", description: "Start time in HH:mm 24-hour format." },
+        endTime: { type: "string", description: "End time in HH:mm 24-hour format." },
+        purpose: { type: "string", description: "Purpose supplied by the user." }
+      },
+      required: ["roomId", "roomNumber", "date", "startTime", "endTime", "purpose"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "proposeEventRegistration",
+    description: "Prepare an event-registration confirmation request. This does not register the user. Call getCampusEvents first.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        eventId: { type: "string", description: "Exact event ID returned by getCampusEvents." },
+        eventName: { type: "string", description: "Human-readable event name." }
+      },
+      required: ["eventId", "eventName"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "proposeAssignmentStatusUpdate",
+    description: "Prepare an assignment-status confirmation request. This does not update the assignment. Call getUpcomingAssignments first.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        assignmentId: { type: "string", description: "Exact assignment ID returned by getUpcomingAssignments." },
+        assignmentTitle: { type: "string", description: "Human-readable assignment title." },
+        status: { type: "string", enum: ["PENDING", "IN_PROGRESS", "SUBMITTED"] }
+      },
+      required: ["assignmentId", "assignmentTitle", "status"],
+      additionalProperties: false
+    }
   }
 ] as const;
 
@@ -116,6 +167,7 @@ const announcementArguments = z.object({
 });
 
 export async function executeCampusTool(name: string, rawArguments: unknown, currentUserId: string): Promise<unknown> {
+  if (name.startsWith("propose")) return createActionProposal(name, rawArguments);
   switch (name) {
     case "getSchedule": {
       const args = scheduleArguments.parse(rawArguments);

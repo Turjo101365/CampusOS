@@ -36,6 +36,18 @@ export const scheduleModel = {
     });
   },
 
+  findUserConflict(externalUserId: string, dayOfWeek: DayOfWeek, startTime: string, endTime: string) {
+    return database.schedule.findFirst({
+      where: {
+        dayOfWeek,
+        startTime: { lt: timeToDate(endTime) },
+        endTime: { gt: timeToDate(startTime) },
+        course: { enrollments: { some: { user: { externalId: externalUserId } } } }
+      },
+      include: scheduleInclude
+    });
+  },
+
   create(input: ScheduleInput) {
     return database.$transaction(async (transaction) => {
       const course = await transaction.course.upsert({

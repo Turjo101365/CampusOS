@@ -61,6 +61,19 @@ export const assignmentsModel = {
     });
   },
   delete(id: string) { return database.assignment.delete({ where: { id } }); },
+  findSubmission(assignmentId: string, externalUserId: string) {
+    return database.assignmentSubmission.findFirst({
+      where: { assignmentId, user: { externalId: externalUserId } }
+    });
+  },
+  isUserEnrolled(assignmentId: string, externalUserId: string) {
+    return database.courseEnrollment.findFirst({
+      where: {
+        user: { externalId: externalUserId },
+        course: { assignments: { some: { id: assignmentId } } }
+      }
+    });
+  },
   setStatus(assignmentId: string, externalUserId: string, status: AssignmentStatus) {
     return database.$transaction(async (transaction) => {
       const user = await transaction.user.findUniqueOrThrow({ where: { externalId: externalUserId } });

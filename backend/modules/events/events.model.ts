@@ -16,7 +16,10 @@ export const eventsModel = {
           ? { gte: query.from ? new Date(query.from) : undefined, lte: query.to ? new Date(query.to) : undefined }
           : undefined
       },
-      include: eventInclude,
+      include: {
+        ...eventInclude,
+        registrations: query.userId ? { where: { user: { externalId: query.userId } } } : false
+      },
       orderBy: { startsAt: "asc" }
     });
   },
@@ -64,5 +67,19 @@ export const eventsModel = {
   },
   findRegistration(eventId: string, externalUserId: string) {
     return database.eventRegistration.findFirst({ where: { eventId, user: { externalId: externalUserId } } });
+  },
+  findUserEventConflict(externalUserId: string, eventId: string | undefined, startsAt: Date, endsAt: Date) {
+    return database.eventRegistration.findFirst({
+      where: {
+        user: { externalId: externalUserId },
+        eventId: eventId ? { not: eventId } : undefined,
+        event: {
+          startsAt: { lt: endsAt },
+          endsAt: { gt: startsAt },
+          status: { not: "CANCELLED" }
+        }
+      },
+      include: { event: true }
+    });
   }
 };

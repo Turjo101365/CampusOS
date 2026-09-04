@@ -33,7 +33,7 @@ export const bookingBodySchema = z.object({
   date: z.string().date(),
   startTime: timeSchema,
   endTime: timeSchema,
-  bookedBy: z.string().trim().min(2).max(120),
+  bookedBy: z.string().trim().min(2).max(120).optional(),
   purpose: z.string().trim().min(3).max(255)
 }).refine((value) => value.startTime < value.endTime, { message: "startTime must be before endTime", path: ["endTime"] });
 

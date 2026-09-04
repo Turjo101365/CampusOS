@@ -79,6 +79,12 @@ export const roomsModel = {
   findBookingConflict(roomId: string, startsAt: Date, endsAt: Date) {
     return database.roomBooking.findFirst({ where: { roomId, startsAt: { lt: endsAt }, endsAt: { gt: startsAt } } });
   },
+  findUserBookingConflict(externalUserId: string, startsAt: Date, endsAt: Date) {
+    return database.roomBooking.findFirst({
+      where: { user: { externalId: externalUserId }, startsAt: { lt: endsAt }, endsAt: { gt: startsAt } },
+      include: { room: true }
+    });
+  },
   findEventConflict(roomId: string, startsAt: Date, endsAt: Date) {
     return database.campusEvent.findFirst({
       where: {
@@ -89,12 +95,12 @@ export const roomsModel = {
       }
     });
   },
-  createBooking(roomId: string, externalUserId: string, input: BookingInput) {
+  createBooking(roomId: string, externalUserId: string, actorName: string, input: BookingInput) {
     return database.roomBooking.create({
       data: {
         room: { connect: { id: roomId } },
         user: { connect: { externalId: externalUserId } },
-        bookedBy: input.bookedBy,
+        bookedBy: actorName,
         purpose: input.purpose,
         startsAt: combineDateAndTime(input.date, input.startTime),
         endsAt: combineDateAndTime(input.date, input.endTime)

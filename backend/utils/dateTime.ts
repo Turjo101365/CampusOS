@@ -28,3 +28,7 @@ export function dayOfWeekForDate(date: Date): DayOfWeek {
   if (!day) throw new AppError("Unable to determine day of week", 400, "INVALID_DATE");
   return day;
 }
+
+export function timeForSchedule(date: Date): string {
+  return date.toISOString().slice(11, 16);
+}

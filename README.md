@@ -1,6 +1,6 @@
 # CampusOS
 
-CampusOS is an AI-powered campus intelligence platform that unifies schedules, rooms, assignments, events, and announcements behind a typed API and an OpenAI tool-calling assistant.
+CampusOS is an AI-powered campus operations platform that unifies schedules, rooms, assignments, events, and announcements behind a typed API and a confirmation-gated OpenAI assistant.
 
 ## Architecture
 
@@ -23,7 +23,17 @@ HTTP route → validation → controller → service → model/repository → Pr
 OpenAI agent → function tool ─────────┘
 ```
 
-The AI layer cannot import the database client. Its five allowlisted tools call the same services used by the REST API.
+The AI layer cannot import the database client. Five read tools call the same query services used by the REST API. Three proposal-only tools can prepare a room booking, event registration, or assignment status change, but only an explicit user confirmation invokes the corresponding REST mutation.
+
+## Operational actions
+
+The assistant supports three confirmation-gated actions:
+
+- Book an available room.
+- Register the current user for an event.
+- Update the current student's assignment status.
+
+Each mutation resolves the authenticated actor, enforces role and ownership rules, rechecks domain conflicts, writes through the service/model boundary, and returns a structured `CONFIRMED` receipt. The local `x-user-id` identity mechanism is development-only; use verified authentication in production.
 
 ## Prerequisites
 

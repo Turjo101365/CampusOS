@@ -7,4 +7,5 @@ import { agentChatBodySchema, agentSessionParamsSchema } from "./ai.validation.j
 export const aiRouter = Router();
 aiRouter.get("/tools", asyncHandler(aiController.listTools));
 aiRouter.post("/chat", validateRequest({ body: agentChatBodySchema }), asyncHandler(aiController.chat));
+aiRouter.post("/chat/stream", validateRequest({ body: agentChatBodySchema }), asyncHandler(aiController.streamChat));
 aiRouter.delete("/sessions/:sessionId", validateRequest({ params: agentSessionParamsSchema }), asyncHandler(aiController.clearSession));

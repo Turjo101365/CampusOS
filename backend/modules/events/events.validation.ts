@@ -4,7 +4,8 @@ export const eventParamsSchema = z.object({ id: z.string().min(1) });
 export const eventListQuerySchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
-  status: z.enum(["UPCOMING", "ACTIVE", "COMPLETED", "CANCELLED"]).optional()
+  status: z.enum(["UPCOMING", "ACTIVE", "COMPLETED", "CANCELLED"]).optional(),
+  userId: z.string().min(1).optional()
 });
 const eventFieldsSchema = z.object({
   name: z.string().trim().min(3).max(190),
