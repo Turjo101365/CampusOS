@@ -11,7 +11,12 @@ export const aiController = {
   async chat(request: Request, response: Response) {
     const sessionId = request.body.sessionId ?? randomUUID();
     const currentUserId = (request as AuthenticatedRequest).auth.userId;
-    return sendSuccess(response, await runCampusAgent(request.body.message, sessionId, currentUserId), "AI response generated");
+    try {
+      return sendSuccess(response, await runCampusAgent(request.body.message, sessionId, currentUserId), "AI response generated");
+    } catch (error) {
+      console.error("[ai.controller] chat failed:", error);
+      throw error;
+    }
   },
 
   /**
@@ -39,6 +44,7 @@ export const aiController = {
       });
       writeEvent("result", reply);
     } catch (error) {
+      console.error("[ai.controller] streamChat failed:", error);
       const appError = error instanceof AppError ? error : new AppError("The AI assistant is unavailable");
       writeEvent("error", { message: appError.message, code: appError.code });
     } finally {
