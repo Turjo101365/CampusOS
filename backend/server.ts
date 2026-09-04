@@ -8,6 +8,19 @@ const server = app.listen(environment.BACKEND_PORT, () => {
   notificationScheduler.start();
 });
 
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.warn(`Port ${environment.BACKEND_PORT} is temporarily busy, retrying in 1s...`);
+    setTimeout(() => {
+      server.close();
+      server.listen(environment.BACKEND_PORT);
+    }, 1000);
+  } else {
+    console.error("Server error:", err);
+    process.exit(1);
+  }
+});
+
 async function shutdown(signal: string): Promise<void> {
   console.info(`${signal} received; closing CampusOS API`);
   notificationScheduler.stop();
